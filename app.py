@@ -139,16 +139,6 @@ MODEL_METRICS = {
     'E2 Ensemble (Recommended)':{'rmse': 1369.2,'mape': 6.91, 'cv':1369.2, 'rank':1},
 }
 
-# Pre-computed static forecasts (from dissertation phases)
-STATIC_FC = {
-    'ARIMA'  : {'test':[24911,25851], 'future':[41000,47639,69544,85871]},
-    'SARIMA' : {'test':[17865,27305], 'future':[32572,34521,44639,63870]},
-    'Prophet': {'test':[19698,38206], 'future':[35158,29451,51996,100846]},
-    'LSTM'   : {'test':[10437,10623], 'future':[10371, 9834, 9577, 9479]},
-    'XGBoost': {'test':[13415,13415], 'future':[13415,13415,13415,13415]},
-    'E2 Ensemble (Recommended)':{'test':[12803,12842],'future':[12790,12680,12627,12607]},
-}
-
 COUNTY_DATA = {
     'Nairobi':{'cluster':'High','total_kg':12231.1,'trend':'📈'},
     'Migori':{'cluster':'High','total_kg':10071.0,'trend':'📈'},
@@ -475,6 +465,40 @@ def run_forecast(log_series, model_name, gbr, lstm_params, sc_min, sc_rng, ensem
         cur_log.append(p_log)
 
     return results
+
+
+def build_model_comparison_rows(base_log, gbr, lstm_params, sc_min, sc_rng, ensemble_weights):
+    model_names = [
+        'E2 Ensemble (Recommended)',
+        'XGBoost',
+        'LSTM',
+        'SARIMA',
+        'ARIMA',
+        'Prophet',
+    ]
+
+    rows = []
+    for model_name in model_names:
+        future_vals = run_forecast(
+            base_log,
+            model_name,
+            gbr,
+            lstm_params,
+            sc_min,
+            sc_rng,
+            ensemble_weights,
+            n=4,
+        )
+        row = {
+            'Model': model_name,
+            'Type': '⭐ Ensemble' if 'Ensemble' in model_name else ('Individual' if model_name in {'XGBoost', 'LSTM'} else 'Statistical'),
+            'Test MAPE': f"{MODEL_METRICS.get(model_name, {}).get('mape', '—')}%",
+        }
+        for lbl, val in zip(future_labels_used, future_vals):
+            row[lbl] = f'{val:,}'
+        rows.append(row)
+
+    return rows
 
 
 # ─────────────────────────────────────────────────────────────
@@ -804,15 +828,16 @@ with tab2:
     st.markdown('<div class="sec-title">📊 All Models — Future Forecast Comparison (kg)</div>',
                 unsafe_allow_html=True)
 
-    cmp_rows = []
-    for m, d in STATIC_FC.items():
-        row = {'Model':m, 'Type':'⭐ Ensemble' if 'Ensemble' in m else 'Individual'}
-        for lbl, v in zip(future_labels_used, d['future']):
-            row[lbl] = f'{v:,}'
-        row['Test MAPE'] = f"{MODEL_METRICS.get(m.replace(' (Recommended)',''),{}).get('mape','—')}%"
-        cmp_rows.append(row)
+    cmp_rows = build_model_comparison_rows(
+        active_log,
+        gbr_model,
+        lstm_params,
+        sc_min,
+        sc_rng,
+        ensemble_weights,
+    )
 
-    df_cmp = pd.DataFrame(cmp_rows)
+    df_cmp = pd.DataFrame(cmp_rows, columns=['Model', 'Type', *future_labels_used, 'Test MAPE'])
 
     def hl2(row):
         if 'Ensemble' in str(row['Model']):
