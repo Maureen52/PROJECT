@@ -22,6 +22,12 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from sklearn.ensemble import GradientBoostingRegressor
+from pathlib import Path
+import pickle
+try:
+    import joblib
+except Exception:
+    joblib = None
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -212,6 +218,14 @@ CLUSTER_CFG = {
 # ─────────────────────────────────────────────────────────────
 # MODEL TRAINING FUNCTIONS
 # ─────────────────────────────────────────────────────────────
+MODEL_DIR = Path(__file__).resolve().parent / 'artifacts'
+MODEL_BUNDLE_CANDIDATES = [
+    MODEL_DIR / 'model_bundle.pkl',
+    MODEL_DIR / 'trained_models.pkl',
+    MODEL_DIR / 'model_bundle.pickle',
+]
+
+
 def build_row(log_series, t_idx):
     s = np.array(log_series)
     lag1=s[-1]; lag2=s[-2]; lag3=s[-3]
@@ -223,9 +237,46 @@ def build_row(log_series, t_idx):
                       np.sin(2*np.pi*half/2),np.cos(2*np.pi*half/2),
                       lag1,lag2,lag3,rm2,rm3,ldiff,tup,abvm]])
 
+
+def _load_serialized_models():
+    for bundle_path in MODEL_BUNDLE_CANDIDATES:
+        if not bundle_path.exists():
+            continue
+
+        bundle = None
+        if joblib is not None:
+            try:
+                bundle = joblib.load(bundle_path)
+            except Exception:
+                bundle = None
+
+        if bundle is None:
+            with bundle_path.open('rb') as fh:
+                bundle = pickle.load(fh)
+
+        if isinstance(bundle, (tuple, list)) and len(bundle) >= 4:
+            gbr, lstm_params, sc_min, sc_rng = bundle[:4]
+            return gbr, lstm_params, sc_min, sc_rng, bundle_path.name
+
+        if isinstance(bundle, dict):
+            gbr = bundle.get('gbr_model') or bundle.get('xgb_model') or bundle.get('model')
+            lstm_params = bundle.get('lstm_params') or bundle.get('lstm_model')
+            sc_min = bundle.get('sc_min')
+            sc_rng = bundle.get('sc_rng')
+
+            if gbr is not None and lstm_params is not None and sc_min is not None and sc_rng is not None:
+                return gbr, lstm_params, sc_min, sc_rng, bundle_path.name
+
+    return None
+
+
 @st.cache_resource
 def get_models():
-    """Train XGBoost and LSTM once, cache for the session."""
+    """Load saved Colab-trained models when available, otherwise train fallback models."""
+    loaded = _load_serialized_models()
+    if loaded is not None:
+        return loaded
+
     log = HIST_LOG.copy()
 
     # ── XGBoost ────────────────────────────────────────────────
@@ -304,7 +355,7 @@ def get_models():
             if wait>=60: break
 
     Wih,Whh,bh,Wy,by=bs
-    return gbr, (Wih,Whh,bh,Wy,by), sc_min, sc_rng
+    return gbr, (Wih,Whh,bh,Wy,by), sc_min, sc_rng, 'fallback-training'
 
 
 def run_forecast(log_series, model_name, gbr, lstm_params, sc_min, sc_rng, n=4):
@@ -432,8 +483,15 @@ with st.sidebar:
 # ─────────────────────────────────────────────────────────────
 # LOAD MODELS
 # ─────────────────────────────────────────────────────────────
-with st.spinner('🌿 Training models on NACADA historical data…'):
-    gbr_model, lstm_params, sc_min, sc_rng = get_models()
+with st.spinner('🌿 Loading trained models…'):
+    gbr_model, lstm_params, sc_min, sc_rng, model_source = get_models()
+
+if model_source == 'fallback-training':
+    st.warning(
+        'Saved Colab model artifacts were not found in /artifacts, so the app is using the built-in fallback training logic.'
+    )
+else:
+    st.success(f'Loaded trained model bundle from {model_source}.')
 
 # ─────────────────────────────────────────────────────────────
 # DETERMINE ACTIVE SERIES (with or without new value)
