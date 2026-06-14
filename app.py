@@ -215,6 +215,11 @@ MODEL_BUNDLE_CANDIDATES = [
     MODEL_DIR / 'model_bundle.pickle',
 ]
 MODEL_FILES_DIR = Path(__file__).resolve().parent / 'models'
+EXTRA_MODEL_FILE_CANDIDATES = {
+    'ARIMA': [MODEL_FILES_DIR / 'arima_model.kpl', MODEL_FILES_DIR / 'arima_model.pkl'],
+    'SARIMA': [MODEL_FILES_DIR / 'sarima_model.kpl', MODEL_FILES_DIR / 'sarima_model.pkl'],
+    'Prophet': [MODEL_FILES_DIR / 'prophet_model.kpl', MODEL_FILES_DIR / 'prophet_model.pkl'],
+}
 
 
 def build_row(log_series, t_idx):
@@ -307,7 +312,18 @@ def _load_colab_models():
     if metadata_path.exists():
         metadata = load_any(metadata_path)
 
-    return gbr, lstm_params, sc_min, sc_rng, ensemble_weights, metadata, 'models/'
+    extra_models = {}
+    for model_name, candidate_paths in EXTRA_MODEL_FILE_CANDIDATES.items():
+        for candidate_path in candidate_paths:
+            if not candidate_path.exists():
+                continue
+            try:
+                extra_models[model_name] = load_any(candidate_path)
+                break
+            except Exception:
+                continue
+
+    return gbr, lstm_params, sc_min, sc_rng, ensemble_weights, metadata, 'models/', extra_models
 
 
 @st.cache_resource
@@ -320,7 +336,7 @@ def get_models():
     loaded = _load_serialized_models()
     if loaded is not None:
         gbr, lstm_params, sc_min, sc_rng, bundle_name = loaded
-        return gbr, lstm_params, sc_min, sc_rng, {'xgb': 0.795, 'lstm': 0.205}, None, bundle_name
+        return gbr, lstm_params, sc_min, sc_rng, {'xgb': 0.795, 'lstm': 0.205}, None, bundle_name, {}
 
     log = HIST_LOG.copy()
 
@@ -400,14 +416,15 @@ def get_models():
             if wait>=60: break
 
     Wih,Whh,bh,Wy,by=bs
-    return gbr, (Wih,Whh,bh,Wy,by), sc_min, sc_rng, {'xgb': 0.795, 'lstm': 0.205}, None, 'fallback-training'
+    return gbr, (Wih,Whh,bh,Wy,by), sc_min, sc_rng, {'xgb': 0.795, 'lstm': 0.205}, None, 'fallback-training', {}
 
 
-def run_forecast(log_series, model_name, gbr, lstm_params, sc_min, sc_rng, ensemble_weights=None, n=4):
+def run_forecast(log_series, model_name, gbr, lstm_params, sc_min, sc_rng, ensemble_weights=None, extra_models=None, n=4):
     """Return list of n forecast values in kg for the chosen model."""
     Wih,Whh,bh,Wy,by = lstm_params
     H = Wih.shape[0]//4
     ensemble_weights = ensemble_weights or {'xgb': 0.795, 'lstm': 0.205}
+    extra_models = extra_models or {}
 
     def sg(x): return 1/(1+np.exp(-np.clip(x,-15,15)))
     def th(x): return np.tanh(np.clip(x,-15,15))
@@ -445,17 +462,51 @@ def run_forecast(log_series, model_name, gbr, lstm_params, sc_min, sc_rng, ensem
             p_log    = ensemble_weights.get('xgb', 0.795) * xgb_log + ensemble_weights.get('lstm', 0.205) * lstm_log
 
         elif model_name == 'SARIMA':
-            # AR(1) on diff approximation using stored parameters
-            diff = cur[-1] - cur[-2]
-            p_log = cur[-1] + 0.4 * diff - 0.15 * (cur[-1] - np.mean(cur))
+            model_obj = extra_models.get('SARIMA')
+            if model_obj is not None:
+                if hasattr(model_obj, 'forecast'):
+                    pred = model_obj.forecast(steps=1)
+                    p_log = float(np.asarray(pred).reshape(-1)[0])
+                elif hasattr(model_obj, 'predict'):
+                    pred = model_obj.predict(1)
+                    p_log = float(np.asarray(pred).reshape(-1)[0])
+                else:
+                    p_log = cur[-1]
+            else:
+                p_log = cur[-1]
 
         elif model_name == 'ARIMA':
-            diff  = cur[-1] - cur[-2]
-            p_log = cur[-1] + 0.55 * diff
+            model_obj = extra_models.get('ARIMA')
+            if model_obj is not None:
+                if hasattr(model_obj, 'forecast'):
+                    pred = model_obj.forecast(steps=1)
+                    p_log = float(np.asarray(pred).reshape(-1)[0])
+                elif hasattr(model_obj, 'predict'):
+                    pred = model_obj.predict(1)
+                    p_log = float(np.asarray(pred).reshape(-1)[0])
+                else:
+                    p_log = cur[-1]
+            else:
+                p_log = cur[-1]
 
         elif model_name == 'Prophet':
-            slope = np.polyfit(range(len(cur)), cur, 1)[0]
-            p_log = cur[-1] + slope
+            model_obj = extra_models.get('Prophet')
+            if model_obj is not None and hasattr(model_obj, 'predict'):
+                try:
+                    if hasattr(model_obj, 'make_future_dataframe'):
+                        future_df = model_obj.make_future_dataframe(periods=1, freq='6M')
+                        pred = model_obj.predict(future_df)
+                        p_log = float(pred['yhat'].iloc[-1])
+                    else:
+                        pred = model_obj.predict(pd.DataFrame({'ds': [pd.Timestamp.today()]}))
+                        if isinstance(pred, pd.DataFrame) and 'yhat' in pred:
+                            p_log = float(pred['yhat'].iloc[0])
+                        else:
+                            p_log = float(np.asarray(pred).reshape(-1)[0])
+                except Exception:
+                    p_log = cur[-1]
+            else:
+                p_log = cur[-1]
 
         else:
             p_log = cur[-1]
@@ -467,7 +518,7 @@ def run_forecast(log_series, model_name, gbr, lstm_params, sc_min, sc_rng, ensem
     return results
 
 
-def build_model_comparison_rows(base_log, gbr, lstm_params, sc_min, sc_rng, ensemble_weights):
+def build_model_comparison_rows(base_log, gbr, lstm_params, sc_min, sc_rng, ensemble_weights, extra_models):
     model_names = [
         'E2 Ensemble (Recommended)',
         'XGBoost',
@@ -487,6 +538,7 @@ def build_model_comparison_rows(base_log, gbr, lstm_params, sc_min, sc_rng, ense
             sc_min,
             sc_rng,
             ensemble_weights,
+            extra_models,
             n=4,
         )
         row = {
@@ -564,7 +616,7 @@ with st.sidebar:
 # LOAD MODELS
 # ─────────────────────────────────────────────────────────────
 with st.spinner('🌿 Loading trained models…'):
-    gbr_model, lstm_params, sc_min, sc_rng, ensemble_weights, model_metadata, model_source = get_models()
+    gbr_model, lstm_params, sc_min, sc_rng, ensemble_weights, model_metadata, model_source, extra_models = get_models()
 
 if model_source == 'fallback-training':
     st.warning('Saved Colab model artifacts were not found, so the app is using the built-in fallback training logic.')
@@ -588,7 +640,7 @@ if run_update and new_value_kg > 0:
 # Compute forecast
 forecast_kg = run_forecast(
     active_log, selected_model,
-    gbr_model, lstm_params, sc_min, sc_rng, ensemble_weights, n=4
+    gbr_model, lstm_params, sc_min, sc_rng, ensemble_weights, extra_models, n=4
 )
 n_active = len(active_labels)
 future_labels_used = NEXT_PERIODS[:4]
@@ -835,6 +887,7 @@ with tab2:
         sc_min,
         sc_rng,
         ensemble_weights,
+        extra_models,
     )
 
     df_cmp = pd.DataFrame(cmp_rows, columns=['Model', 'Type', *future_labels_used, 'Test MAPE'])
