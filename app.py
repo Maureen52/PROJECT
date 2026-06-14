@@ -2,10 +2,10 @@
 # app.py  —  Kenya Cannabis Seizure Forecast Tool
 # William Maureen Ndinda | SCT213-C002-0048/2022 | JKUAT Karen
 # ============================================================
-#
-# HOW TO RUN ON YOUR MACHINE:
-#   pip install streamlit plotly scikit-learn numpy pandas
-#   streamlit run app.py
+# This Streamlit app provides an interactive interface for forecasting cannabis 
+# seizures in Kenya using multiple models, including a custom ensemble. 
+# It is designed for NACADA to visualize historical trends, input new data, 
+# and see updated forecasts along with county-level risk zones.
 #
 # WHAT THIS APP DOES:
 #   1. Shows the full historical seizure series (2021–2025)
@@ -224,6 +224,7 @@ MODEL_BUNDLE_CANDIDATES = [
     MODEL_DIR / 'trained_models.pkl',
     MODEL_DIR / 'model_bundle.pickle',
 ]
+MODEL_FILES_DIR = Path(__file__).resolve().parent / 'models'
 
 
 def build_row(log_series, t_idx):
@@ -270,12 +271,66 @@ def _load_serialized_models():
     return None
 
 
+def _load_colab_models():
+    xgb_path = MODEL_FILES_DIR / 'xgboost_model.pkl'
+    lstm_weights_path = MODEL_FILES_DIR / 'lstm_weights.pkl'
+    lstm_scaler_path = MODEL_FILES_DIR / 'lstm_scaler.pkl'
+    ensemble_weights_path = MODEL_FILES_DIR / 'ensemble_weights.pkl'
+    metadata_path = MODEL_FILES_DIR / 'model_metadata.pkl'
+
+    if not (xgb_path.exists() and lstm_weights_path.exists()):
+        return None
+
+    def load_any(path):
+        if joblib is not None:
+            try:
+                return joblib.load(path)
+            except Exception:
+                pass
+        with path.open('rb') as fh:
+            return pickle.load(fh)
+
+    gbr = load_any(xgb_path)
+    lstm_params = load_any(lstm_weights_path)
+    sc_min, sc_rng = HIST_LOG[:5].min(), (HIST_LOG[:5].max() - HIST_LOG[:5].min() + 1e-9)
+
+    scaler_bundle = None
+    if lstm_scaler_path.exists():
+        scaler_bundle = load_any(lstm_scaler_path)
+        if isinstance(scaler_bundle, dict):
+            sc_min = scaler_bundle.get('sc_min', sc_min)
+            sc_rng = scaler_bundle.get('sc_rng', sc_rng)
+        elif isinstance(scaler_bundle, (tuple, list)) and len(scaler_bundle) >= 2:
+            sc_min, sc_rng = scaler_bundle[:2]
+
+    ensemble_weights = {'xgb': 0.795, 'lstm': 0.205}
+    if ensemble_weights_path.exists():
+        ensemble_bundle = load_any(ensemble_weights_path)
+        if isinstance(ensemble_bundle, dict):
+            ensemble_weights['xgb'] = float(ensemble_bundle.get('xgb', ensemble_weights['xgb']))
+            ensemble_weights['lstm'] = float(ensemble_bundle.get('lstm', ensemble_weights['lstm']))
+        elif isinstance(ensemble_bundle, (tuple, list)) and len(ensemble_bundle) >= 2:
+            ensemble_weights['xgb'] = float(ensemble_bundle[0])
+            ensemble_weights['lstm'] = float(ensemble_bundle[1])
+
+    metadata = None
+    if metadata_path.exists():
+        metadata = load_any(metadata_path)
+
+    return gbr, lstm_params, sc_min, sc_rng, ensemble_weights, metadata, 'models/'
+
+
 @st.cache_resource
 def get_models():
     """Load saved Colab-trained models when available, otherwise train fallback models."""
-    loaded = _load_serialized_models()
+    loaded = _load_colab_models()
     if loaded is not None:
         return loaded
+
+    loaded = _load_serialized_models()
+    if loaded is not None:
+        gbr, lstm_params, sc_min, sc_rng, bundle_name = loaded
+        return gbr, lstm_params, sc_min, sc_rng, {'xgb': 0.795, 'lstm': 0.205}, None, bundle_name
 
     log = HIST_LOG.copy()
 
@@ -355,13 +410,14 @@ def get_models():
             if wait>=60: break
 
     Wih,Whh,bh,Wy,by=bs
-    return gbr, (Wih,Whh,bh,Wy,by), sc_min, sc_rng, 'fallback-training'
+    return gbr, (Wih,Whh,bh,Wy,by), sc_min, sc_rng, {'xgb': 0.795, 'lstm': 0.205}, None, 'fallback-training'
 
 
-def run_forecast(log_series, model_name, gbr, lstm_params, sc_min, sc_rng, n=4):
+def run_forecast(log_series, model_name, gbr, lstm_params, sc_min, sc_rng, ensemble_weights=None, n=4):
     """Return list of n forecast values in kg for the chosen model."""
     Wih,Whh,bh,Wy,by = lstm_params
     H = Wih.shape[0]//4
+    ensemble_weights = ensemble_weights or {'xgb': 0.795, 'lstm': 0.205}
 
     def sg(x): return 1/(1+np.exp(-np.clip(x,-15,15)))
     def th(x): return np.tanh(np.clip(x,-15,15))
@@ -396,7 +452,7 @@ def run_forecast(log_series, model_name, gbr, lstm_params, sc_min, sc_rng, n=4):
             xgb_log  = float(gbr.predict(build_row(cur, t))[0])
             sc       = (cur - sc_min) / sc_rng
             lstm_log = lstm_step(sc[-2:]) * sc_rng + sc_min
-            p_log    = 0.795 * xgb_log + 0.205 * lstm_log
+            p_log    = ensemble_weights.get('xgb', 0.795) * xgb_log + ensemble_weights.get('lstm', 0.205) * lstm_log
 
         elif model_name == 'SARIMA':
             # AR(1) on diff approximation using stored parameters
@@ -484,14 +540,12 @@ with st.sidebar:
 # LOAD MODELS
 # ─────────────────────────────────────────────────────────────
 with st.spinner('🌿 Loading trained models…'):
-    gbr_model, lstm_params, sc_min, sc_rng, model_source = get_models()
+    gbr_model, lstm_params, sc_min, sc_rng, ensemble_weights, model_metadata, model_source = get_models()
 
 if model_source == 'fallback-training':
-    st.warning(
-        'Saved Colab model artifacts were not found in /artifacts, so the app is using the built-in fallback training logic.'
-    )
+    st.warning('Saved Colab model artifacts were not found, so the app is using the built-in fallback training logic.')
 else:
-    st.success(f'Loaded trained model bundle from {model_source}.')
+    st.success(f'Loaded trained model artifacts from {model_source}.')
 
 # ─────────────────────────────────────────────────────────────
 # DETERMINE ACTIVE SERIES (with or without new value)
@@ -510,7 +564,7 @@ if run_update and new_value_kg > 0:
 # Compute forecast
 forecast_kg = run_forecast(
     active_log, selected_model,
-    gbr_model, lstm_params, sc_min, sc_rng, n=4
+    gbr_model, lstm_params, sc_min, sc_rng, ensemble_weights, n=4
 )
 n_active = len(active_labels)
 future_labels_used = NEXT_PERIODS[:4]
