@@ -1,0 +1,171 @@
+=================================================================
+PHASE 4C: LSTM MODEL (numpy from scratch)
+=================================================================
+
+  Full series n     : 9
+  Train  (gradient) : n=5  2021 H1 – 2023 H1
+  Val    (early-stop): n=2  2023 H2 – 2024 H1
+  Test   (holdout)  : n=2  2024 H2 – 2025 H1
+=================================================================
+SECTION 2 — Min-max scaling (fit on training set only)
+=================================================================
+  Scale min  : 8.194894  (= min of training log series)
+  Scale max  : 9.381540  (= max of training log series)
+  Scaled train : [0.5471 0.2341 0.     0.5848 1.    ]
+  Scaled val   : [1.122  1.1034]
+  Scaled test  : [1.1826 1.0607]
+=================================================================
+SECTION 3 — Sequence generation
+=================================================================
+  LOOK_BACK         : 2
+  X_train shape     : (3, 2)   (sequences × look_back)
+  y_train shape     : (3,)
+  X_val shape       : (2, 2)
+  X_test shape      : (2, 2)
+=================================================================
+SECTION 4 — LSTM implementation
+=================================================================
+
+  Single-layer LSTM cell equations (Hochreiter & Schmidhuber, 1997):
+    i_t = σ(W_ih · x_t + W_hh · h_{t-1} + b_i)   input gate
+    f_t = σ(W_fh · x_t + W_hh · h_{t-1} + b_f)   forget gate
+    g_t = tanh(W_gh · x_t + W_hh · h_{t-1} + b_g) cell gate
+    o_t = σ(W_oh · x_t + W_hh · h_{t-1} + b_o)   output gate
+    c_t = f_t ⊙ c_{t-1} + i_t ⊙ g_t             cell state
+    h_t = o_t ⊙ tanh(c_t)                         hidden state
+
+  All four gates packed into a single matrix multiply for efficiency:
+    gates = W_ih @ x_t + W_hh @ h_{t-1} + b   (shape: 4H)
+
+  Output layer: y_hat = W_y @ h_T + b_y   (single linear neuron)
+
+  Optimiser: Adam with gradient clipping ||g||∞ ≤ 5
+  Early stopping: monitor validation MSE, patience=60 epochs
+
+=================================================================
+SECTION 5 — Grid search: hidden_units × learning_rate
+=================================================================
+
+  Grid: H in {4, 8, 16}, lr in {0.005, 0.01}
+  Criterion: best validation MSE at early stopping
+  Each configuration uses seed=42 for reproducibility.
+
+  H     lr       n_params     best_val_MSE  best_epoch
+  ----- -------- ---------- -------------- -----------
+  Early stop at epoch 114 (best val_MSE=0.193633)
+  4     0.005    89               0.193633          54
+  Early stop at epoch 89 (best val_MSE=0.141353)
+  4     0.010    89               0.141353          29
+  Early stop at epoch 105 (best val_MSE=0.114963)
+  8     0.005    305              0.114963          45
+  Early stop at epoch 85 (best val_MSE=0.065815)
+  8     0.010    305              0.065815          25
+  Early stop at epoch 92 (best val_MSE=0.130135)
+  16    0.005    1121             0.130135          32
+  Early stop at epoch 78 (best val_MSE=0.078993)
+  16    0.010    1121             0.078993          18
+
+  Best: H=8, lr=0.01  (val_MSE=0.065815)
+=================================================================
+SECTION 6 — Train best model (H=8, lr=0.01)
+=================================================================
+  Epoch     1: train_MSE=0.439729  val_MSE=1.100242
+  Early stop at epoch 85 (best val_MSE=0.065815)
+
+  In-sample fit on training sequences:
+  Period         Actual (kg)   Fitted (kg)    Residual
+  ------------ ------------- ------------- -----------
+  2022 H1              3,621         7,687      +4,065
+  2022 H2              7,250         6,776        -474
+  2023 H1             11,866         7,881      -3,985
+=================================================================
+SECTION 7 — Test set evaluation (2024 H2 and 2025 H1)
+=================================================================
+
+  Period         Actual (kg)    LSTM pred      Error   Error%
+  ------------ ------------- ------------ ---------- --------
+  2024 H2             14,738       10,437     -4,301    -29.2%
+  2025 H1             12,753       10,623     -2,129    -16.7%
+
+  Test metrics:
+    RMSE :    3,393.6 kg
+    MAE  :    3,215.1 kg
+    MAPE :      22.94%
+=================================================================
+SECTION 8 — Walk-forward cross-validation (4 folds)
+=================================================================
+  Fold   Train                      Test           Pred (kg)  Actual (kg)   RMSE (kg)
+  ------ -------------------------- ------------ ----------- ------------ -----------
+  Early stop at epoch 173 (best val_MSE=0.000000)
+  Fold 1   2021 H1–2023 H1            2023 H2            3,531       13,714      10,183
+  Early stop at epoch 58 (best val_MSE=0.005607)
+  Fold 2   2021 H1–2023 H2            2024 H1           14,259       13,415         844
+  Early stop at epoch 66 (best val_MSE=0.000003)
+  Fold 3   2021 H1–2024 H1            2024 H2           13,714       14,738       1,023
+
+  CV RMSE (kg) :    5,928.7
+  CV MAPE (%)  :      29.16
+=================================================================
+SECTION 9 — Future forecast with bootstrap uncertainty intervals
+=================================================================
+
+  Period         LSTM fc (kg)   95% PI lower   95% PI upper
+  ------------ -------------- -------------- --------------
+  2025 H2              10,371          4,886         15,614
+  2026 H1               9,834          4,633         14,806
+  2026 H2               9,577          4,512         14,419
+  2027 H1               9,479          4,466         14,272
+=================================================================
+SECTION 10 — Residual diagnostics
+=================================================================
+  Training sequence residuals (kg scale): [-4065.5   473.8  3984.9]
+  Residual mean   : 131.09 kg
+  Residual std    : 3295.49 kg
+  Ljung-Box Q     : 3.2434  p=0.1976  PASS
+  Jarque-Bera     : 0.2932  p=0.8636  PASS
+  Note: only 3 residuals — tests are indicative only.
+=================================================================
+SECTION 11 — Training diagnostics plot
+=================================================================
+  Saved -> fig4c_lstm_training.png
+=================================================================
+SECTION 12 — Forecast plot
+=================================================================
+  Saved -> fig4c_lstm_forecast.png
+=================================================================
+SECTION 13 — Walk-forward CV visualisation
+=================================================================
+  Early stop at epoch 173 (best val_MSE=0.000000)
+  Early stop at epoch 58 (best val_MSE=0.005607)
+  Early stop at epoch 66 (best val_MSE=0.000003)
+  Saved -> fig4c_lstm_walkforward.png
+=================================================================
+SECTION 14 — Full model comparison (Phases 4A, 4B, 4C)
+=================================================================
+
+  ╔═══════════════════════════════════════════════════════════════════════╗
+  ║           FINAL MODEL COMPARISON — PHASES 4A, 4B, 4C                ║
+  ╠═══════════════════════════════════════════════════════════════════════╣
+  ║ Metric              ARIMA(1,1,2)  SARIMA(1,1,2)(1,0,1)  Prophet  LSTM ║
+  ╠═══════════════════════════════════════════════════════════════════════╣
+  ║ Test RMSE (kg)           11,727.7            10,525.2  18,336.6  3,393.6 ║
+  ║ Test MAE  (kg)                n/a                 n/a      n/a  3,215.1 ║
+  ║ Test MAPE (%)               85.87               67.67   116.63   22.94 ║
+  ╠═══════════════════════════════════════════════════════════════════════╣
+  ║ CV RMSE (kg)              9,777.6              3,459.8  5,092.6  5,928.7 ║
+  ║ CV MAPE (%)                  n/a                 n/a    36.55   29.16 ║
+  ╚═══════════════════════════════════════════════════════════════════════╝
+
+  Best test RMSE  : LSTM
+  Best CV   RMSE  : SARIMA(1,1,2)(1,0,1)
+  Recommendation  : SARIMA(1,1,2)(1,0,1) recommended for Phase 8 policy report
+                    (CV RMSE is the more reliable metric for n=9)
+=================================================================
+PHASE 4C COMPLETE
+Outputs:
+  fig4c_lstm_training.png
+  fig4c_lstm_forecast.png
+  fig4c_lstm_walkforward.png
+  lstm_report.txt
+Next: Phase 5 — final model comparison + Phase 7 spatial hotspot analysis
+=================================================================

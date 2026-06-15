@@ -1,0 +1,202 @@
+=================================================================
+PHASE 4A: ARIMA & SARIMA MODELLING
+=================================================================
+
+  Full series (log scale, n=9): [8.844 8.473 8.195 8.889 9.382 9.526 9.504 9.598 9.454]
+  Train (n=7): periods 1-7  (2021 H1 – 2024 H1)
+  Test  (n=2): periods 8-9  (2024 H2 – 2025 H1)
+=================================================================
+SECTION 2 — ARIMA engine implementation
+=================================================================
+=================================================================
+SECTION 3 — Grid search over ARIMA orders (auto_arima equivalent)
+=================================================================
+
+  Strategy:
+    d = 1  (log first-difference, confirmed stationary by ADF in Phase 3)
+    p in {0,1,2}  (AR order, guided by PACF)
+    q in {0,1,2}  (MA order, guided by ACF)
+    Exclude (0,1,0) — random walk, degenerate model
+    Select by AIC on the training set (periods 1-7)
+    Re-confirm with BIC as a robustness check
+
+  Order                    AIC       BIC          CSS Converged
+  ------------------ --------- --------- ------------ ---------
+  ARIMA(0, 1, 1)       -19.601   -20.383     0.002609        no
+  ARIMA(0, 1, 2)       -27.704   -29.545     0.000051        no
+  ARIMA(1, 1, 0)         7.357     6.576     0.572907       yes
+  ARIMA(1, 1, 1)         4.467     3.295     0.215452        no
+  ARIMA(1, 1, 2)       -35.490   -37.945     0.000004        no
+  ARIMA(2, 1, 0)        -0.255    -2.096     0.049026       yes
+  ARIMA(2, 1, 1)       -29.546   -32.000     0.000020       yes
+  ARIMA(2, 1, 2)       -29.495   -32.564     0.000012        no
+
+  Best order by AIC : ARIMA(1, 1, 2)  (AIC=-35.490, BIC=-37.945)
+
+  Full ranking:
+    order      aic      bic
+(1, 1, 2) -35.4905 -37.9453
+(2, 1, 1) -29.5455 -32.0003
+(2, 1, 2) -29.4952 -32.5637
+(0, 1, 2) -27.7039 -29.5450
+(0, 1, 1) -19.6013 -20.3825
+(2, 1, 0)  -0.2553  -2.0964
+(1, 1, 1)   4.4671   3.2954
+(1, 1, 0)   7.3570   6.5759
+=================================================================
+SECTION 4 — Fit best ARIMA(1, 1, 2) on training set
+=================================================================
+  ARIMA(1,1,2): AIC=-35.49  BIC=-37.95  CSS=0.000004  converged=False
+
+  Fitted parameters:
+    intercept     :   0.534854
+    AR(1)         :  -0.567726
+    MA(1)         : 252.638153
+    MA(2)         : -179.614632
+
+  In-sample (log scale):
+  Period           Actual     Fitted   Residual
+  2021 H1          8.8441     (init)          —
+  2021 H2          8.4727     (init)          —
+  2022 H1          8.1949     (init)          —
+  2022 H2          8.8889     8.8875      0.0014
+  2023 H1          9.3815     9.3810      0.0006
+  2023 H2          9.5263     9.5277     -0.0015
+  2024 H1          9.5042     9.5042      0.0000
+=================================================================
+SECTION 5 — Residual diagnostics
+=================================================================
+
+  Residual statistics (n=4 usable residuals):
+    Mean     : 0.000119   (should be ~0)
+    Std      : 0.001047
+    Skewness : -0.4298   (should be ~0 for normal residuals)
+    Kurtosis : -1.0797   (excess; should be ~0 for normal residuals)
+
+  Ljung-Box portmanteau test (H0: no autocorrelation, lags=3):
+    Q statistic : 2.7318
+    p-value     : 0.4349
+    Conclusion  : PASS — residuals appear uncorrelated
+
+  Jarque-Bera normality test (H0: residuals are normally distributed):
+    JB statistic: 0.3175
+    p-value     : 0.8532
+    Conclusion  : PASS — residuals consistent with normality
+
+  Note: with only 4 residuals these tests have very low power.
+  Treat conclusions as indicative, not definitive. A visual inspection
+  of the residual plots below is the primary diagnostic tool.
+
+=================================================================
+SECTION 6 — SARIMA(p,d,q)(P,D,Q,s) with s=2
+=================================================================
+
+  Seasonal period s=2 (2 half-years = 1 year).
+
+  SARIMA model: ARIMA(p,d,q) x (P,D,Q)_s
+  The seasonal differencing operator: D_s y_t = y_t - y_{t-s}
+  Seasonal AR: PHI(B^s) = 1 - PHI_1 B^s - ... - PHI_P B^{sP}
+  Seasonal MA: THETA(B^s) = 1 + THETA_1 B^s + ... + THETA_Q B^{sQ}
+
+  Strategy:
+    Non-seasonal part : best order from grid search above
+    Seasonal part     : try (1,0,0)_2 and (0,0,1)_2
+    Seasonal diff D=0 : our series is short (n=9); D=1 would reduce
+                        available data to 7 obs — not recommended.
+    Select by AIC.
+
+  Spec                                 AIC       BIC          CSS
+  ------------------------------ --------- --------- ------------
+  SARIMA(1,1,2)(1,0,0)_2           -29.495   -32.564     0.000012
+  SARIMA(1,1,2)(0,0,1)_2           -34.381   -37.449     0.000004
+  SARIMA(1,1,2)(1,0,1)_2           -34.690   -38.372     0.000002
+  SARIMA(1,1,1)(1,0,0)_2           -29.546   -32.000     0.000020
+  SARIMA(1,1,1)(0,0,1)_2           -35.491   -37.946     0.000004
+
+  Best SARIMA: SARIMA(1,1,1)(0,0,1)_2  (AIC=-35.491, BIC=-37.946)
+  SARIMA params: [   0.53476   -0.56804  252.63815 -179.6142 ]
+=================================================================
+SECTION 7 — Walk-forward cross-validation (4 folds)
+=================================================================
+
+  Fold   Train periods          Test period     ARIMA RMSE(log)  SARIMA RMSE(log)
+  ------ ---------------------- -------------- ---------------- -----------------
+  Fold 1   2021 H1 – 2023 H1      2023 H2                  0.3897            0.3897
+  Fold 2   2021 H1 – 2023 H2      2024 H1                  0.6521            0.6633
+  Fold 3   2021 H1 – 2024 H1      2024 H2                  0.7226            0.7178
+
+  Cross-validation summary (log scale):
+  Metric                    ARIMA     SARIMA
+  -------------------- ---------- ----------
+  Mean RMSE (log)          0.5881     0.5903
+  Mean MAPE (log)          6.1602     6.1827
+
+  Cross-validation summary (original kg scale):
+  Metric                    ARIMA     SARIMA
+  -------------------- ---------- ----------
+  Mean RMSE (kg)          11497.8    11545.7
+  Mean MAPE (kg)             81.9       82.3
+=================================================================
+SECTION 8 — Test set evaluation (2024 H2 and 2025 H1)
+=================================================================
+
+  Test period results:
+  Period        Actual (kg)     ARIMA fc      Error    SARIMA fc      Error
+  ------------ ------------ ------------ ---------- ------------ ----------
+  2024 H2            14,738       30,359    +15,621       30,213    +15,475
+  2025 H1            12,753       32,532    +19,779       32,555    +19,802
+
+  Test set metrics:
+  Metric                  ARIMA       SARIMA
+  ---------------- ------------ ------------
+  RMSE (kg)            17,822.0     17,770.7
+  MAE (kg)             17,700.3      17,638.5
+  MAPE (%)               130.55       130.14
+
+  Future forecasts (2025 H2 – 2027 H1):
+  Period        ARIMA fc (kg)                 95% PI  SARIMA fc (kg)
+  ------------ -------------- ---------------------- ---------------
+  2025 H2              53,402 [   42,947,    66,692]          53,265
+  2026 H1              68,809 [   51,515,    92,688]          68,743
+  2026 H2             101,726 [   72,059,   145,684]         101,519
+  2027 H1             139,099 [   91,347,   214,216]         138,873
+=================================================================
+SECTION 9 — Residual diagnostic plots
+=================================================================
+  Saved -> fig4a_arima_diagnostics.png
+=================================================================
+SECTION 10 — Forecast plot (publication quality)
+=================================================================
+  Saved -> fig4a_arima_forecast.png
+=================================================================
+SECTION 11 — Model comparison table
+=================================================================
+
+  ╔══════════════════════════════════════════════════════════════╗
+  ║              MODEL COMPARISON SUMMARY TABLE                 ║
+  ╠══════════════════════════════════════════════════════════════╣
+  ║ Metric                     ARIMA(1, 1, 2)    SARIMA         ║
+  ╠══════════════════════════════════════════════════════════════╣
+  ║ AIC (train)                -35.490        -35.491        ║
+  ║ BIC (train)                -37.945        -37.946        ║
+  ╠══════════════════════════════════════════════════════════════╣
+  ║ Test RMSE (kg)            17,822.0       17,770.7        ║
+  ║ Test MAE  (kg)            17,700.3       17,638.5        ║
+  ║ Test MAPE (%)               130.55         130.14        ║
+  ╠══════════════════════════════════════════════════════════════╣
+  ║ CV RMSE (kg, 4-fold)      11,497.8       11,545.7        ║
+  ║ CV MAPE (%, 4-fold)          81.87          82.26        ║
+  ╠══════════════════════════════════════════════════════════════╣
+  ║ Ljung-Box p (train)         0.4349         n/a             ║
+  ║ Jarque-Bera p (train)       0.8532         n/a             ║
+  ╚══════════════════════════════════════════════════════════════╝
+
+  Recommended model for Phase 4B (Prophet) comparison: SARIMA SARIMA(1,1,1)(0,0,1)_2
+  (Won 2/3 head-to-head metrics)
+=================================================================
+PHASE 4A COMPLETE
+Saved files:
+  fig4a_arima_diagnostics.png
+  fig4a_arima_forecast.png
+  arima_report.txt
+=================================================================

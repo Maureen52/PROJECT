@@ -1,0 +1,141 @@
+=================================================================
+PHASE 3: EXPLORATORY DATA ANALYSIS
+=================================================================
+
+SECTION 0 — Loading Phase 2 outputs
+  national_features : (9, 26)
+  county_features   : (441, 28)
+  Periods           : ['2021 H1', '2021 H2', '2022 H1', '2022 H2', '2023 H1', '2023 H2', '2024 H1', '2024 H2', '2025 H1']
+  National values   : [ 6932.1  4781.4  3621.4  7249.7 11866.3 13714.1 13415.2 14737.7 12752.5]
+=================================================================
+
+SECTION 1 — Statistical helper implementations
+=================================================================
+  acf()                — sample ACF from first principles
+  pacf_yw()            — PACF via Yule-Walker equations
+  acf_ci()             — Bartlett 95% confidence bands
+  adf_test()           — Augmented Dickey-Fuller (OLS)
+  additive_decompose() — classical T + S + R decomposition
+=================================================================
+SECTION 2 — National trend overview
+=================================================================
+  OLS slope (raw) : +1,320.0 kg/period  R²=0.727
+  OLS slope (log) : +0.1512/period
+  Saved -> fig3_1_national_trend.png
+
+=================================================================
+SECTION 3 — Additive time-series decomposition
+=================================================================
+  Trend range     : 5,006 – 13,956 kg
+  Seasonal effect : H1=-130 kg,  H2=+130 kg
+  Residual std    : 1,018 kg
+  Saved -> fig3_2_decomposition.png
+
+=================================================================
+SECTION 4 — ACF and PACF analysis
+=================================================================
+  95% CI threshold  : ±0.653
+  ACF  (raw) 1-4    : [ 0.768  0.314 -0.105 -0.38 ]
+  PACF (raw) 1-4    : [ 0.768 -0.675  0.044 -0.208]
+  ACF  (log) 1-4    : [ 0.721  0.23  -0.142 -0.335]
+  PACF (log) 1-4    : [ 0.721 -0.604  0.09  -0.214]
+  [raw] Both ACF [1] and PACF [1, 2] significant → ARMA or strong trend; confirm d via ADF
+  [log] Both ACF [1] and PACF [1] significant → ARMA or strong trend; confirm d via ADF
+  Saved -> fig3_3_acf_pacf.png
+
+=================================================================
+SECTION 5 — Augmented Dickey-Fuller stationarity tests
+=================================================================
+
+  H0: unit root (non-stationary)   H1: stationary
+  Reject H0 if ADF statistic < critical value (5% = -2.862).
+  Note: n=9 is very short; results are indicative.
+  Always interpret alongside ACF/PACF patterns.
+
+  Raw kg_seized
+    ADF statistic  : -1.9804
+    p-value (approx): 0.1000
+    Critical values: 1%=-3.4336  5%=-2.8621  10%=-2.5671
+    Conclusion     : NON-STATIONARY  (fail to reject H0)
+
+  1st difference (diff_1)
+    ADF statistic  : -1.9593
+    p-value (approx): 0.1000
+    Critical values: 1%=-3.4336  5%=-2.8621  10%=-2.5671
+    Conclusion     : NON-STATIONARY  (fail to reject H0)
+
+  log(1+kg)
+    ADF statistic  : -1.7787
+    p-value (approx): 0.1000
+    Critical values: 1%=-3.4336  5%=-2.8621  10%=-2.5671
+    Conclusion     : NON-STATIONARY  (fail to reject H0)
+
+  log 1st difference
+    ADF statistic  : -2.9971
+    p-value (approx): 0.0406
+    Critical values: 1%=-3.4336  5%=-2.8621  10%=-2.5671
+    Conclusion     : STATIONARY  (reject H0 at 5%)
+
+  Saved -> fig3_4_adf_results.png
+
+=================================================================
+SECTION 6 — County-level seizure heatmap
+=================================================================
+  Top-5 counties by cumulative seizures:
+    1. Nairobi                     12,201.2 kg  (13.6%)
+    2. Migori                       9,943.5 kg  (11.1%)
+    3. Nakuru                       6,147.3 kg  (6.9%)
+    4. Marsabit                     5,058.7 kg  (5.6%)
+    5. Busia                        4,722.0 kg  (5.3%)
+  Saved -> fig3_5_county_heatmap.png
+
+=================================================================
+SECTION 7 — Top-10 county trend comparison
+=================================================================
+  Top-10: ['Nairobi', 'Migori', 'Nakuru', 'Marsabit', 'Busia', 'Kilifi', 'Kiambu', 'Kisii', 'Mombasa', 'Kisumu']
+  Saved -> fig3_6_top10_counties.png
+
+=================================================================
+SECTION 8 — EDA summary and ARIMA order guidance
+=================================================================
+
+  TREND
+  -----
+  National seizures rose from 6,932 kg (2021 H1) to a peak of
+  14,738 kg (2024 H2)
+  — a 113% increase.
+  OLS slope: +1,320 kg per half-year  (R² = 0.73).
+
+  SEASONALITY
+  -----------
+  Decomposition: H1 avg = -130 kg vs trend,
+                 H2 avg = +130 kg vs trend.
+  Seasonal component is small relative to the trend —
+  the dominant driver is a secular upward trend.
+
+  STATIONARITY (ADF, 5% level)
+  ----------------------------
+  Raw series     : NON-STATIONARY
+  1st difference : NON-STATIONARY
+  -> Recommended d = 1
+
+  ACF / PACF ORDERS
+  -----------------
+  95% CI = ±0.653
+  ACF significant lags  : [1]  -> q = 1
+  PACF significant lags : [1, 2] -> p = 2
+
+  RECOMMENDED STARTING ARIMA ORDER: (2, 1, 1)
+  Also evaluate: ARIMA(1,1,0), ARIMA(0,1,1), ARIMA(1,1,1)
+  — select final order by AIC/BIC grid search in Phase 4.
+
+  SPATIAL PATTERNS
+  ----------------
+  Top-3 counties: ['Nairobi', 'Migori', 'Nakuru'] account for
+  31.6% of all seizures.
+  Border counties dominate: Migori (Tanzania border), Busia (Uganda border),
+  Kilifi (Coast / maritime route), Marsabit (Northern Corridor).
+
+=================================================================
+PHASE 3 COMPLETE
+=================================================================

@@ -1,0 +1,224 @@
+=================================================================
+PHASE 1: DATA LOADING & CLEANING
+=================================================================
+
+STEP 1 — Loading raw file: /content/drive/MyDrive/Project/FINALIZED.csv
+  Raw shape            : 50 rows x 11 cols
+  Raw columns          : ['ID', 'COUNTY/REGION', 'JANUARY -JUNE 2021', 'JULY-DECEMBER 2021', 'JANUARY -JUNE 2022', 'JULY-DECEMBER 2022 ', 'JANUARY -JUNE 2023', 'JULY-DECEMBER 2023', 'JANUARY -JUNE 2024', 'JULY-DECEMBER 2024', 'JANUARY -JUNE 2025']
+  Columns after strip  : ['ID', 'COUNTY/REGION', 'JANUARY -JUNE 2021', 'JULY-DECEMBER 2021', 'JANUARY -JUNE 2022', 'JULY-DECEMBER 2022', 'JANUARY -JUNE 2023', 'JULY-DECEMBER 2023', 'JANUARY -JUNE 2024', 'JULY-DECEMBER 2024', 'JANUARY -JUNE 2025']
+
+STEP 2 — Separating TOTAL row from county rows
+  TOTAL rows           : 1
+  County rows          : 49
+  Unnamed cols dropped : []
+
+STEP 3 — Cleaning period columns
+  Strategy: '_' and blank -> NaN; coerce everything else to float64
+
+  Underscore ('_') counts per period:
+    2021 H1   : 0 underscore(s)
+    2021 H2   : 0 underscore(s)
+    2022 H1   : 0 underscore(s)
+    2022 H2   : 3 underscore(s)
+    2023 H1   : 1 underscore(s)
+    2023 H2   : 0 underscore(s)
+    2024 H1   : 1 underscore(s)
+    2024 H2   : 8 underscore(s)
+    2025 H1   : 5 underscore(s)
+
+  Resulting dtypes (all must be float64):
+    2021 H1: float64
+    2021 H2: float64
+    2022 H1: float64
+    2022 H2: float64
+    2023 H1: float64
+    2023 H2: float64
+    2024 H1: float64
+    2024 H2: float64
+    2025 H1: float64
+
+STEP 4 — Standardising county names
+  All county names after standardisation:
+    Baringo
+    Bomet
+    Bungoma
+    Busia
+    Elgeyo Marakwet
+    Embu
+    Garissa
+    Homa Bay
+    Isiolo
+    Kajiado
+    Kakamega
+    Kapu (CPIU)
+    Kericho
+    Kiambu
+    Kilifi
+    Kirinyanga
+    Kisii
+    Kisumu
+    Kitui
+    Kwale
+    Laikipia
+    Lamu
+    Machakos
+    Makueni
+    Mandera
+    Marsabit
+    Meru
+    Migori
+    Mombasa
+    Muranga
+    Nairobi
+    Nakuru
+    Nandi
+    Narok
+    Nyamira
+    Nyandarua
+    Nyeri
+    Railways (CPIU)
+    Samburu
+    Siaya
+    Taita Taveta
+    Tana River
+    Tharaka Nithi
+    Trans Nzoia
+    Turkana
+    Uasin Gishu
+    Vihiga
+    Wajir
+    West Pokot
+
+STEP 5 — Building national totals series
+  Priority: TOTAL row value; fallback to county sum when TOTAL is NaN
+  2021 H1:     6,932.09 kg  [TOTAL row]
+  2021 H2:     4,781.42 kg  [TOTAL row]
+  2022 H1:     3,621.41 kg  [TOTAL row]
+  2022 H2:     7,249.73 kg  [TOTAL row]
+  2023 H1:    11,866.28 kg  [TOTAL row]
+  2023 H2:    13,714.12 kg  [TOTAL row]
+  2024 H1:    13,415.20 kg  [TOTAL row]
+  2024 H2:    14,737.70 kg  [TOTAL row]
+  2025 H1:    12,752.52 kg  [TOTAL row]
+
+STEP 6 — Melting wide -> long format
+  Long-format shape    : (441, 4)
+  Columns              : ['county', 'kg_seized', 'period_label', 'period_date']
+
+  Sample (first 9 rows — Baringo):
+ county  kg_seized period_label period_date
+Baringo        NaN      2021 H1  2021-03-31
+Baringo       0.08      2021 H2  2021-09-30
+Baringo       2.25      2022 H1  2022-03-31
+Baringo       7.30      2022 H2  2022-09-30
+Baringo       0.10      2023 H1  2023-03-31
+Baringo       6.45      2023 H2  2023-09-30
+Baringo       0.00      2024 H1  2024-03-31
+Baringo        NaN      2024 H2  2024-09-30
+Baringo       1.30      2025 H1  2025-03-31
+
+STEP 7 — Missing value audit (before imputation)
+  Total county-period cells : 441
+  Missing cells             : 29 (6.6%)
+
+  Counties with missing periods:
+    Baringo                     : ['2021 H1', '2024 H2']
+    Bomet                       : ['2024 H2']
+    Garissa                     : ['2022 H1', '2023 H1', '2025 H1']
+    Kakamega                    : ['2021 H1']
+    Kapu (CPIU)                 : ['2022 H2']
+    Kericho                     : ['2022 H1']
+    Mandera                     : ['2024 H2', '2025 H1']
+    Nandi                       : ['2022 H1']
+    Railways (CPIU)             : ['2022 H1', '2023 H1', '2023 H2', '2024 H2', '2025 H1']
+    Samburu                     : ['2024 H2']
+    Tana River                  : ['2021 H1', '2024 H1', '2024 H2', '2025 H1']
+    Turkana                     : ['2021 H1', '2022 H2', '2024 H2']
+    West Pokot                  : ['2021 H1', '2022 H2', '2024 H2', '2025 H1']
+
+STEP 8 — Imputation: linear interpolation per county time series
+  Baringo                     : 2 cell(s) interpolated
+  Bomet                       : 1 cell(s) interpolated
+  Garissa                     : 3 cell(s) interpolated
+  Kakamega                    : 1 cell(s) interpolated
+  Kapu (CPIU)                 : 1 cell(s) interpolated
+  Kericho                     : 1 cell(s) interpolated
+  Mandera                     : 2 cell(s) interpolated
+  Nandi                       : 1 cell(s) interpolated
+  Railways (CPIU)             : 5 cell(s) interpolated
+  Samburu                     : 1 cell(s) interpolated
+  Tana River                  : 4 cell(s) interpolated
+  Turkana                     : 3 cell(s) interpolated
+  West Pokot                  : 4 cell(s) interpolated
+
+  Missing before imputation : 29
+  Missing after  imputation : 0  <- must be 0
+  Total cells imputed       : 29
+
+STEP 9 — Adding derived columns
+  New columns : time_idx, half, year, log_kg_seized, county_total, is_hotspot
+  Top-5 hotspot counties: ['Nairobi', 'Migori', 'Nakuru', 'Marsabit', 'Busia']
+
+  Final dtypes:
+county                   object
+period_label             object
+period_date      datetime64[ns]
+kg_seized               float64
+log_kg_seized           float64
+time_idx                  int64
+half                      int64
+is_hotspot                int64
+
+  Sample (Baringo, all 9 periods):
+ county period_label  kg_seized  log_kg_seized  time_idx  half  is_hotspot
+Baringo      2021 H1       0.08       0.076961         0     1           0
+Baringo      2021 H2       0.08       0.076961         1     2           0
+Baringo      2022 H1       2.25       1.178655         2     1           0
+Baringo      2022 H2       7.30       2.116256         3     2           0
+Baringo      2023 H1       0.10       0.095310         4     1           0
+Baringo      2023 H2       6.45       2.008214         5     2           0
+Baringo      2024 H1       0.00       0.000000         6     1           0
+Baringo      2024 H2       0.65       0.500775         7     2           0
+Baringo      2025 H1       1.30       0.832909         8     1           0
+
+STEP 10 — Building clean wide-format pivot
+  Wide-format shape    : (49, 10)
+
+  Top-10 counties by cumulative seizures:
+county
+Nairobi        12,201.19 kg
+Migori          9,943.53 kg
+Nakuru          6,147.33 kg
+Marsabit        5,058.71 kg
+Busia           4,722.03 kg
+Kilifi          4,667.34 kg
+Kiambu          3,915.93 kg
+Kisii           3,831.99 kg
+Mombasa         3,755.28 kg
+Kisumu          3,119.09 kg
+
+STEP 11 — Final data quality summary
+  Counties             : 49
+  Periods              : 9
+  Total records        : 441
+  Missing kg_seized    : 0  <- must be 0
+  Negative kg_seized   : 0  <- must be 0
+  Zero kg_seized       : 13
+  National range       : 3,621 – 14,738 kg
+  Grand total          : 89,070 kg
+
+  National series (for time-series modelling):
+    2021 H1  2021-03-31      6,932.09 kg
+    2021 H2  2021-09-30      4,781.42 kg
+    2022 H1  2022-03-31      3,621.41 kg
+    2022 H2  2022-09-30      7,249.73 kg
+    2023 H1  2023-03-31     11,866.28 kg
+    2023 H2  2023-09-30     13,714.12 kg
+    2024 H1  2024-03-31     13,415.20 kg
+    2024 H2  2024-09-30     14,737.70 kg
+    2025 H1  2025-03-31     12,752.52 kg
+
+STEP 12 — Saving outputs to disk
+  Saved -> cleaned_long.csv
+  Saved -> cleaned_wide.csv
+  Saved -> national_series.csv

@@ -1,0 +1,263 @@
+=================================================================
+PHASE 2: FEATURE ENGINEERING
+=================================================================
+
+SECTION 1 — Loading Phase 1 outputs
+  df_long shape   : (441, 10)
+  national points : 9
+
+  National series:
+    2021-03-31      6,932.09 kg
+    2021-09-30      4,781.42 kg
+    2022-03-31      3,621.41 kg
+    2022-09-30      7,249.73 kg
+    2023-03-31     11,866.28 kg
+    2023-09-30     13,714.12 kg
+    2024-03-31     13,415.20 kg
+    2024-09-30     14,737.70 kg
+    2025-03-31     12,752.52 kg
+
+=================================================================
+SECTION 2 — National-level feature engineering
+=================================================================
+
+[2.1] Time index features
+  time_idx  : integer 0–8 (linear trend proxy)
+  year      : calendar year (2021–2025)
+  half      : 1 = Jan–Jun, 2 = Jul–Dec
+  half_sin  : sin(2π × half / 2) — cyclical seasonality encoding
+  half_cos  : cos(2π × half / 2) — cyclical seasonality encoding
+
+  Sample:
+            period_label  time_idx  year  half      half_sin  half_cos
+period_date                                                           
+2021-03-31       2021 H1         0  2021     1  1.224647e-16      -1.0
+2021-09-30       2021 H2         1  2021     2 -2.449294e-16       1.0
+2022-03-31       2022 H1         2  2022     1  1.224647e-16      -1.0
+2022-09-30       2022 H2         3  2022     2 -2.449294e-16       1.0
+2023-03-31       2023 H1         4  2023     1  1.224647e-16      -1.0
+2023-09-30       2023 H2         5  2023     2 -2.449294e-16       1.0
+2024-03-31       2024 H1         6  2024     1  1.224647e-16      -1.0
+2024-09-30       2024 H2         7  2024     2 -2.449294e-16       1.0
+2025-03-31       2025 H1         8  2025     1  1.224647e-16      -1.0
+
+[2.2] Log-transformed target
+  log_kg_seized = log(1 + kg_seized)
+  Raw  range : 3,621 – 14,738 kg
+  Log  range : 8.195 – 9.598
+
+[2.3] Lag features
+  lag_1      : kg_seized at t-1  (previous half-year)
+  lag_2      : kg_seized at t-2  (same half, prior year)
+  lag_3      : kg_seized at t-3  (3 half-years back)
+  log_lag_k  : log-scale versions of each lag
+
+  Lag values (NaN = insufficient history):
+            period_label    kg_seized        lag_1        lag_2        lag_3
+period_date                                                                 
+2021-03-31       2021 H1   6932.09297          NaN          NaN          NaN
+2021-09-30       2021 H2   4781.42000   6932.09297          NaN          NaN
+2022-03-31       2022 H1   3621.40700   4781.42000   6932.09297          NaN
+2022-09-30       2022 H2   7249.72500   3621.40700   4781.42000   6932.09297
+2023-03-31       2023 H1  11866.28000   7249.72500   3621.40700   4781.42000
+2023-09-30       2023 H2  13714.12000  11866.28000   7249.72500   3621.40700
+2024-03-31       2024 H1  13415.20000  13714.12000  11866.28000   7249.72500
+2024-09-30       2024 H2  14737.70000  13415.20000  13714.12000  11866.28000
+2025-03-31       2025 H1  12752.52000  14737.70000  13415.20000  13714.12000
+
+[2.4] Rolling statistics
+  roll_mean_2      : 2-period rolling mean of kg_seized
+  roll_mean_3      : 3-period rolling mean of kg_seized
+  roll_std_3       : 3-period rolling std  of kg_seized (volatility)
+  log_roll_mean_2  : 2-period rolling mean of log(1+kg)
+  log_roll_mean_3  : 3-period rolling mean of log(1+kg)
+
+  Rolling values:
+            period_label    kg_seized   roll_mean_2   roll_mean_3   roll_std_3
+period_date                                                                   
+2021-03-31       2021 H1   6932.09297   6932.092970   6932.092970          NaN
+2021-09-30       2021 H2   4781.42000   5856.756485   5856.756485  1520.755441
+2022-03-31       2022 H1   3621.40700   4201.413500   5111.639990  1679.864378
+2022-09-30       2022 H2   7249.72500   5435.566000   5217.517333  1853.053842
+2023-03-31       2023 H1  11866.28000   9558.002500   7579.137333  4132.295616
+2023-09-30       2023 H2  13714.12000  12790.200000  10943.375000  3329.551908
+2024-03-31       2024 H1  13415.20000  13564.660000  12998.533333   991.885326
+2024-09-30       2024 H2  14737.70000  14076.450000  13955.673333   693.550699
+2025-03-31       2025 H1  12752.52000  13745.110000  13635.140000  1010.700307
+
+[2.5] Differencing and growth rate
+  diff_1     : first difference of kg_seized (for stationarity)
+  log_diff_1 : first difference of log(1+kg)  (log-returns)
+  pct_change : % change period-on-period
+
+  Differenced values:
+            period_label  kg_seized    diff_1  log_diff_1  pct_change
+period_date                                                          
+2021-03-31       2021 H1   6932.093       NaN         NaN         NaN
+2021-09-30       2021 H2   4781.420 -2150.673      -0.371     -31.025
+2022-03-31       2022 H1   3621.407 -1160.013      -0.278     -24.261
+2022-09-30       2022 H2   7249.725  3628.318       0.694     100.191
+2023-03-31       2023 H1  11866.280  4616.555       0.493      63.679
+2023-09-30       2023 H2  13714.120  1847.840       0.145      15.572
+2024-03-31       2024 H1  13415.200  -298.920      -0.022      -2.180
+2024-09-30       2024 H2  14737.700  1322.500       0.094       9.858
+2025-03-31       2025 H1  12752.520 -1985.180      -0.145     -13.470
+
+[2.6] Trend and regime flags
+  trend_up   : 1 if kg_seized > lag_1  (upward momentum)
+  above_mean : 1 if kg_seized > series mean (9,897 kg)
+  regime     : tercile bucket — low / medium / high seizure intensity
+
+  Regime thresholds:
+    Low    : < 7,144 kg
+    Medium : 7,144 – 12,973 kg
+    High   : > 12,973 kg
+
+  Flags:
+            period_label    kg_seized  trend_up  above_mean  regime
+period_date                                                        
+2021-03-31       2021 H1   6932.09297         0           0     low
+2021-09-30       2021 H2   4781.42000         0           0     low
+2022-03-31       2022 H1   3621.40700         0           0     low
+2022-09-30       2022 H2   7249.72500         1           0  medium
+2023-03-31       2023 H1  11866.28000         1           1  medium
+2023-09-30       2023 H2  13714.12000         1           1    high
+2024-03-31       2024 H1  13415.20000         0           1    high
+2024-09-30       2024 H2  14737.70000         1           1    high
+2025-03-31       2025 H1  12752.52000         0           1  medium
+
+[2.7] Prophet-ready dataframe
+  prophet_raw : ds=period_date, y=kg_seized  (raw scale)
+  prophet_log : ds=period_date, y=log(1+kg)  (log scale)
+
+  prophet_raw:
+        ds           y
+2021-03-31  6932.09297
+2021-09-30  4781.42000
+2022-03-31  3621.40700
+2022-09-30  7249.72500
+2023-03-31 11866.28000
+2023-09-30 13714.12000
+2024-03-31 13415.20000
+2024-09-30 14737.70000
+2025-03-31 12752.52000
+
+[2.8] Supervised feature matrix (X_national, y_national)
+  Feature columns  : ['time_idx', 'year', 'half', 'half_sin', 'half_cos', 'log_lag_1', 'log_lag_2', 'log_lag_3', 'log_roll_mean_2', 'log_roll_mean_3', 'log_diff_1', 'trend_up', 'above_mean']
+  Rows available   : 6  (9 total − 3 lost to lag_3 NaN)
+
+  X_national shape : (6, 13)
+  y_national shape : (6,)
+
+  X_national (all rows):
+             time_idx  year  half      half_sin  half_cos  log_lag_1  log_lag_2  log_lag_3  log_roll_mean_2  log_roll_mean_3  log_diff_1  trend_up  above_mean
+period_date                                                                                                                                                   
+2022-09-30          3  2022     2 -2.449294e-16       1.0   8.194894   8.472702   8.844061         8.541875         8.518818    0.693963         1           0
+2023-03-31          4  2023     1  1.224647e-16      -1.0   8.888857   8.194894   8.472702         9.135199         8.821764    0.492684         1           1
+2023-09-30          5  2023     2 -2.449294e-16       1.0   9.381540   8.888857   8.194894         9.453897         9.265550    0.144714         1           1
+2024-03-31          6  2024     1  1.224647e-16      -1.0   9.526254   9.381540   8.888857         9.515236         9.470671   -0.022036         0           1
+2024-09-30          7  2024     2 -2.449294e-16       1.0   9.504218   9.526254   9.381540         9.551225         9.542901    0.094014         1           1
+2025-03-31          8  2025     1  1.224647e-16      -1.0   9.598232   9.504218   9.526254         9.525897         9.518671   -0.144669         0           1
+
+  y_national (log kg_seized):
+period_date
+2022-09-30    8.8889
+2023-03-31    9.3815
+2023-09-30    9.5263
+2024-03-31    9.5042
+2024-09-30    9.5982
+2025-03-31    9.4536
+
+=================================================================
+SECTION 3 — County-level feature engineering
+=================================================================
+
+Applying lag, rolling, and growth features to all 49 counties.
+Each county's lags are computed independently (no cross-county leakage).
+
+  county_fe shape  : (441, 28)
+  Columns added    : lag_1/2/3, log_lag_1/2/3, roll_mean_2/3,
+                     roll_std_3, log_roll_mean_2/3, diff_1,
+                     log_diff_1, pct_change, trend_up,
+                     county_share_pct, z_score
+
+  Sample — Nairobi (top county):
+period_label  kg_seized    lag_1    lag_2  roll_mean_3  county_share_pct   z_score
+     2021 H1   1640.436      NaN      NaN  1640.436000           23.6644  0.389045
+     2021 H2    326.400 1640.436      NaN   983.418000            6.8264 -1.406294
+     2022 H1    276.566  326.400 1640.436   747.800667            7.6370 -1.474381
+     2022 H2    691.722  276.566  326.400   431.562667            9.5414 -0.907163
+     2023 H1   2040.990  691.722  276.566  1003.092667           17.1999  0.936313
+     2023 H2   1388.040 2040.990  691.722  1373.584000           10.1212  0.044202
+     2024 H1   1921.300 1388.040 2040.990  1783.443333           14.3218  0.772783
+     2024 H2   1848.600 1921.300 1388.040  1719.313333           12.5433  0.673455
+     2025 H1   2067.140 1848.600 1921.300  1945.680000           16.2097  0.972041
+
+  Sample — Migori (second county):
+period_label  kg_seized  lag_1  lag_2  roll_mean_3  county_share_pct   z_score
+     2021 H1     741.00    NaN    NaN   741.000000           10.6894 -0.495956
+     2021 H2     170.00  741.0    NaN   455.500000            3.5554 -1.274301
+     2022 H1     219.00  170.0  741.0   376.666667            6.0474 -1.207508
+     2022 H2     981.20  219.0  170.0   456.733333           13.5343 -0.168532
+     2023 H1    1170.00  981.2  219.0   790.066667            9.8599  0.088826
+     2023 H2    1786.90 1170.0  981.2  1312.700000           13.0296  0.929739
+     2024 H1    2504.00 1786.9 1170.0  1820.300000           18.6654  1.907237
+     2024 H2    1357.40 2504.0 1786.9  1882.766667            9.2104  0.344276
+     2025 H1    1014.03 1357.4 2504.0  1625.143333            7.9516 -0.123781
+
+=================================================================
+SECTION 4 — Complete national features summary
+=================================================================
+
+  Shape: (9, 25)
+  Columns: ['period_label', 'kg_seized', 'time_idx', 'year', 'half', 'half_sin', 'half_cos', 'log_kg_seized', 'lag_1', 'log_lag_1', 'lag_2', 'log_lag_2', 'lag_3', 'log_lag_3', 'roll_mean_2', 'roll_mean_3', 'roll_std_3', 'log_roll_mean_2', 'log_roll_mean_3', 'diff_1', 'log_diff_1', 'pct_change', 'trend_up', 'above_mean', 'regime']
+
+  Full table (key columns):
+period_label  kg_seized  log_kg_seized  time_idx  half  half_sin     lag_1     lag_2     lag_3  roll_mean_2  roll_mean_3  roll_std_3    diff_1  pct_change  trend_up regime
+     2021 H1   6932.093          8.844         0     1       0.0       NaN       NaN       NaN     6932.093     6932.093         NaN       NaN         NaN         0    low
+     2021 H2   4781.420          8.473         1     2      -0.0  6932.093       NaN       NaN     5856.756     5856.756    1520.755 -2150.673     -31.025         0    low
+     2022 H1   3621.407          8.195         2     1       0.0  4781.420  6932.093       NaN     4201.414     5111.640    1679.864 -1160.013     -24.261         0    low
+     2022 H2   7249.725          8.889         3     2      -0.0  3621.407  4781.420  6932.093     5435.566     5217.517    1853.054  3628.318     100.191         1 medium
+     2023 H1  11866.280          9.382         4     1       0.0  7249.725  3621.407  4781.420     9558.002     7579.137    4132.296  4616.555      63.679         1 medium
+     2023 H2  13714.120          9.526         5     2      -0.0 11866.280  7249.725  3621.407    12790.200    10943.375    3329.552  1847.840      15.572         1   high
+     2024 H1  13415.200          9.504         6     1       0.0 13714.120 11866.280  7249.725    13564.660    12998.533     991.885  -298.920      -2.180         0   high
+     2024 H2  14737.700          9.598         7     2      -0.0 13415.200 13714.120 11866.280    14076.450    13955.673     693.551  1322.500       9.858         1   high
+     2025 H1  12752.520          9.454         8     1       0.0 14737.700 13415.200 13714.120    13745.110    13635.140    1010.700 -1985.180     -13.470         0 medium
+
+=================================================================
+SECTION 5 — Feature correlation with target (national)
+=================================================================
+
+  Pearson |r| with kg_seized (descending):
+    log_kg_seized        0.987  ███████████████████
+    log_roll_mean_2      0.961  ███████████████████
+    roll_mean_2          0.959  ███████████████████
+    above_mean           0.951  ███████████████████
+    roll_mean_3          0.890  █████████████████
+    log_roll_mean_3      0.886  █████████████████
+    time_idx             0.853  █████████████████
+    lag_1                0.831  ████████████████
+    year                 0.828  ████████████████
+    log_lag_1            0.819  ████████████████
+    lag_2                0.532  ██████████
+    log_lag_2            0.464  █████████
+    trend_up             0.447  ████████
+    diff_1               0.287  █████
+    log_diff_1           0.273  █████
+    lag_3                0.224  ████
+    pct_change           0.136  ██
+    log_lag_3            0.135  ██
+    half_sin             0.050  █
+    half                 0.050  █
+    half_cos             0.050  █
+    roll_std_3           0.046  
+
+=================================================================
+SECTION 6 — Saving outputs
+=================================================================
+  Saved -> national_features.csv
+  Saved -> county_features.csv
+  Saved -> prophet_input_raw.csv
+  Saved -> prophet_input_log.csv
+  Saved -> X_national.csv  (feature matrix, 6 rows × 13 features)
+  Saved -> y_national.csv  (log-scale target, 6 rows)

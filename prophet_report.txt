@@ -1,0 +1,181 @@
+=================================================================
+PHASE 4B: PROPHET MODEL (from-scratch implementation)
+=================================================================
+
+  Full series   : n=9
+  Train set     : n=7  (2021 H1 – 2024 H1)
+  Test  set     : n=2  (2024 H2 – 2025 H1)
+  Future periods: ['2025 H2', '2026 H1', '2026 H2', '2027 H1']
+  Time index t  : [0.  0.5 1.  1.5 2.  2.5 3.  3.5 4. ]
+  Log series    : [8.8441 8.4727 8.1949 8.8889 9.3815 9.5263 9.5042 9.5982 9.4536]
+=================================================================
+SECTION 2 — Prophet model architecture
+=================================================================
+
+  Prophet additive decomposition:
+    y(t) = g(t) + s(t) + eps(t)
+
+  g(t) — Piecewise linear trend with S changepoints:
+    g(t) = (k + A(t) @ delta) * t + (m + A(t) @ gamma)
+    A(t) = indicator matrix: A[i,j] = 1 if t[i] >= s_j else 0
+    gamma_j = -s_j * delta_j  (ensures continuity at changepoints)
+    k    = initial growth rate
+    m    = initial offset
+    delta = S-vector of rate adjustments at each changepoint
+    Prior: delta_j ~ Laplace(0, tau)  — approximated by L2 (ridge)
+
+  s(t) — Fourier-series seasonality (period P=2 half-years = 1 year):
+    s(t) = sum_{n=1}^{N} [a_n sin(2pi*n*t/P) + b_n cos(2pi*n*t/P)]
+    Equivalent to Prophet's yearly_seasonality with fourier_order=N
+    Prior: a_n, b_n ~ N(0, sigma_beta^2)
+
+  Uncertainty — bootstrap prediction intervals:
+    Resample training residuals 2000 times, add to each forecast step.
+    Equivalent to Prophet's uncertainty_samples=1000 (MCMC approximation).
+
+=================================================================
+SECTION 3 — Grid search: n_changepoints × fourier_order
+=================================================================
+
+  Equivalent to Prophet's auto hyperparameter selection.
+  Criteria: AIC on training set (lower = better fit penalised for complexity).
+  Grid: n_cp in {1,2,3}, order in {1,2,3}
+  Note: with n=7 training obs, high-parameter models are penalised heavily.
+
+  n_cp   order    n_params          AIC        BIC   ResidStd
+  ------ -------- ---------- ---------- ---------- ----------
+  1      1        5              15.844     14.803    0.16076
+  1      2        7              19.767     18.310    0.15974
+  1      3        9              23.767     21.893    0.15974
+  2      1        6              17.852     16.602    0.16087
+  2      2        8              21.772     20.107    0.15981
+  2      3        10             25.772     23.690    0.15981
+  3      1        7              19.805     18.347    0.16024
+  3      2        9              23.732     21.858    0.15927
+  3      3        11             27.732     25.441    0.15927
+
+  Best configuration: n_cp=1, fourier_order=1
+  AIC=15.844  BIC=14.803
+
+  Full AIC ranking:
+ n_cp  order  n_params     aic     bic    sigma
+    1      1         5 15.8438 14.8026 0.160762
+    2      1         6 17.8517 16.6023 0.160868
+    1      2         7 19.7675 18.3098 0.159742
+    3      1         7 19.8045 18.3469 0.160236
+    2      2         8 21.7724 20.1065 0.159808
+    3      2         9 23.7320 21.8578 0.159271
+    1      3         9 23.7674 21.8933 0.159742
+    2      3        10 25.7724 23.6900 0.159808
+    3      3        11 27.7320 25.4413 0.159270
+=================================================================
+SECTION 4 — Fit best model (n_cp=1, order=1) on training set
+=================================================================
+
+  Fitted parameters:
+    Initial growth rate (k)   : 0.481174
+    Initial offset    (m)     : 8.242974
+    Changepoint 1 at t=1.5: delta=0.004127
+    Fourier a_1              : 0.047001
+    Fourier b_1              : 0.372775
+
+  Model diagnostics:
+    Residual std (train)      : 0.16076  (log scale)
+    AIC                       : 15.8438
+    BIC                       : 14.8026
+    Converged                 : True
+
+  In-sample fit (log scale):
+  Period           Actual     Fitted      Trend   Seasonal   Residual
+  ------------ ---------- ---------- ---------- ---------- ----------
+  2021 H1          8.8441     8.6157     8.2430     0.3728     0.2283
+  2021 H2          8.4727     8.5306     8.4836     0.0470    -0.0579
+  2022 H1          8.1949     8.3514     8.7241    -0.3728    -0.1565
+  2022 H2          8.8889     8.9177     8.9647    -0.0470    -0.0289
+  2023 H1          9.3815     9.5802     9.2074     0.3728    -0.1986
+  2023 H2          9.5263     9.4970     9.4500     0.0470     0.0292
+  2024 H1          9.5042     9.3199     9.6927    -0.3728     0.1843
+=================================================================
+SECTION 5 — Test set evaluation (2024 H2 and 2025 H1)
+=================================================================
+
+  Period         Actual (kg)  Forecast (kg)   Error (kg)   Error %
+  ------------ ------------- -------------- ------------ ---------
+  2024 H2             14,738         19,698       +4,961     +33.7%
+  2025 H1             12,753         38,206      +25,453    +199.6%
+
+  Test set metrics:
+    RMSE : 18,336.6 kg
+    MAE  : 15,206.8 kg
+    MAPE : 116.63%
+=================================================================
+SECTION 6 — Walk-forward cross-validation (4 folds)
+=================================================================
+  Fold   Train                    Test           Pred (kg)  Actual (kg)   RMSE (log)
+  ------ ------------------------ ------------ ----------- ------------ ------------
+  Fold 1   2021 H1–2023 H1          2023 H2            8,064       13,714       0.5309
+  Fold 2   2021 H1–2023 H2          2024 H1            8,748       13,415       0.4275
+  Fold 3   2021 H1–2024 H1          2024 H2           19,698       14,738       0.2901
+
+  Cross-validation averages:
+  Metric                      Value
+  ---------------------- ----------
+  Mean RMSE (log)            0.4162
+  Mean MAPE (log)              4.36%
+  Mean RMSE (kg)            5,092.6
+  Mean MAPE (kg)              36.55%
+=================================================================
+SECTION 7 — Future forecast (4 periods: 2025 H2 – 2027 H1)
+=================================================================
+
+  Period        Forecast (kg)   95% PI lower   95% PI upper
+  ------------ -------------- -------------- --------------
+  2025 H2              35,158         24,934         50,388
+  2026 H1              29,451         20,603         43,299
+  2026 H2              51,996         35,752         78,049
+  2027 H1             100,846         67,152        154,062
+=================================================================
+SECTION 8 — Residual diagnostics
+=================================================================
+  Residual mean     : 0.000000  (should be ~0)
+  Residual std      : 0.148837
+  Ljung-Box Q       : 0.8868  p=0.8286  PASS
+  Jarque-Bera       : 0.5368  p=0.7646  PASS
+  Note: n=7 residuals — tests have very low power. Inspect plots visually.
+=================================================================
+SECTION 9 — Component decomposition plot
+=================================================================
+  Saved -> fig4b_prophet_components.png
+=================================================================
+SECTION 10 — Forecast plot
+=================================================================
+  Saved -> fig4b_prophet_forecast.png
+=================================================================
+SECTION 11 — Model comparison: Prophet vs ARIMA vs SARIMA
+=================================================================
+
+  ╔════════════════════════════════════════════════════════════════════╗
+  ║              MODEL COMPARISON — PHASES 4A & 4B                   ║
+  ╠════════════════════════════════════════════════════════════════════╣
+  ║ Metric                    ARIMA(1,1,2)  SARIMA(1,1,2)(1,0,1)_2  Prophet ║
+  ╠════════════════════════════════════════════════════════════════════╣
+  ║ AIC (train)                  -34.891         -38.528             15.844 ║
+  ╠════════════════════════════════════════════════════════════════════╣
+  ║ Test RMSE (kg)               11,727.7        10,525.2      18,336.6 ║
+  ║ Test MAPE (%)                   85.87           67.67        116.63 ║
+  ╠════════════════════════════════════════════════════════════════════╣
+  ║ CV RMSE (kg, 4-fold)          9,777.6          3,459.8       5,092.6 ║
+  ║ CV MAPE (%, 4-fold)                                              36.55 ║
+  ╚════════════════════════════════════════════════════════════════════╝
+
+  Best test RMSE  : SARIMA
+  Best CV RMSE    : SARIMA
+  Note: LSTM (Phase 4C) still pending — final winner TBD.
+=================================================================
+PHASE 4B COMPLETE
+Outputs:
+  fig4b_prophet_components.png
+  fig4b_prophet_forecast.png
+  prophet_report.txt
+Next: Phase 4C — LSTM model
+=================================================================
