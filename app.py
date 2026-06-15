@@ -3,9 +3,6 @@
 # William Maureen Ndinda | SCT213-C002-0048/2022 | JKUAT Karen
 # ============================================================
 #
-# HOW TO RUN ON YOUR MACHINE:
-#   pip install streamlit plotly scikit-learn numpy pandas
-#   streamlit run app.py
 #
 # WHAT THIS APP DOES:
 #   1. Shows the full historical seizure series (2021–2025)
