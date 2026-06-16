@@ -2,9 +2,6 @@
 # app.py  —  Kenya Cannabis Seizure Forecast Tool
 # William Maureen Ndinda | SCT213-C002-0048/2022 | JKUAT Karen
 # ============================================================
-# HOW TO RUN:
-#   pip install streamlit plotly scikit-learn numpy pandas
-#   streamlit run app.py
 #
 # FOLDER STRUCTURE REQUIRED:
 #   app.py
@@ -188,103 +185,6 @@ CLUSTER_CFG = {
 }
 
 # ─────────────────────────────────────────────────────────────
-# SKLEARN _loss COMPATIBILITY PATCH
-# Fixes "No module named '_loss'" when a model was saved with a
-# different scikit-learn version than the one currently installed.
-# ─────────────────────────────────────────────────────────────
-import sys
-import types
-
-def _patch_sklearn_loss():
-    """
-    Patch missing sklearn._loss module that was restructured in sklearn 1.1+.
-    Models saved with sklearn <1.1 reference sklearn._loss.glm_distribution,
-    while models saved with sklearn >=1.1 use sklearn._loss directly.
-    This shim ensures pickle can find the module regardless of version.
-    """
-    import sklearn
-    sklearn_ver = tuple(int(x) for x in sklearn.__version__.split('.')[:2])
-
-    # Patch 1: sklearn._loss missing (sklearn < 1.1 model on >= 1.1 runtime)
-    if not hasattr(sklearn, '_loss'):
-        try:
-            import sklearn._loss as _loss_mod
-        except ImportError:
-            # Create a stub so pickle doesn't crash on import
-            stub = types.ModuleType('sklearn._loss')
-            sys.modules['sklearn._loss'] = stub
-            # Try to import the glm_distribution from where it actually lives
-            try:
-                from sklearn._loss import glm_distribution
-                stub.glm_distribution = glm_distribution
-            except Exception:
-                pass
-
-    # Patch 2: sklearn.ensemble._gb_losses (moved in sklearn 1.0)
-    if 'sklearn.ensemble._gb_losses' not in sys.modules:
-        try:
-            import sklearn.ensemble._gb_losses
-        except ImportError:
-            stub2 = types.ModuleType('sklearn.ensemble._gb_losses')
-            sys.modules['sklearn.ensemble._gb_losses'] = stub2
-
-    # Patch 3: sklearn.utils.fixes for older pickles
-    if 'sklearn.utils.fixes' not in sys.modules:
-        try:
-            import sklearn.utils.fixes
-        except ImportError:
-            pass
-
-_patch_sklearn_loss()
-
-
-# ─────────────────────────────────────────────────────────────
-# SAFE PICKLE LOADER — handles sklearn version mismatches
-# ─────────────────────────────────────────────────────────────
-class _SklearnCompatUnpickler(pickle.Unpickler):
-    """
-    Custom unpickler that redirects old sklearn internal module paths
-    to their new locations, fixing cross-version pickle compatibility.
-    """
-    _REMAP = {
-        # sklearn < 1.1  →  sklearn >= 1.1
-        'sklearn.ensemble._gb_losses':     'sklearn.ensemble._gb',
-        'sklearn._loss.glm_distribution':  'sklearn._loss',
-        # Add more remaps here if needed
-    }
-
-    def find_class(self, module, name):
-        # Remap relocated modules
-        remapped = self._REMAP.get(module)
-        if remapped:
-            try:
-                return super().find_class(remapped, name)
-            except (ImportError, AttributeError):
-                pass
-        # Also handle the case where only the module prefix changed
-        if module.startswith('sklearn') and module not in sys.modules:
-            # Try to import it; if it fails, try alternate paths
-            for alt in [module.replace('._gb_losses', '._gb'),
-                        module.replace('._loss.', '._loss_')]:
-                try:
-                    return super().find_class(alt, name)
-                except Exception:
-                    pass
-        return super().find_class(module, name)
-
-
-def _safe_load(path):
-    """Load a pickle file with sklearn compatibility patching."""
-    with open(path, 'rb') as f:
-        try:
-            return _SklearnCompatUnpickler(f).load()
-        except Exception:
-            # Fall back to standard pickle (may already work after patching)
-            f.seek(0)
-            return pickle.load(f)
-
-
-# ─────────────────────────────────────────────────────────────
 # LOAD ALL MODELS FROM DISK
 # ─────────────────────────────────────────────────────────────
 MODELS_DIR = os.path.join(os.path.dirname(__file__), 'models')
@@ -294,7 +194,8 @@ def load_all_models():
     """Load all saved models from disk. Cached for the session."""
     def _load(fname):
         path = os.path.join(MODELS_DIR, fname)
-        return _safe_load(path)
+        with open(path, 'rb') as f:
+            return pickle.load(f)
 
     series     = _load('series_data.pkl')
     xgb_data   = _load('xgboost_model.pkl')
@@ -320,21 +221,8 @@ try:
     MODELS = load_all_models()
     SERIES = MODELS['series']
 except Exception as e:
-    sk_ver = ""
-    try:
-        import sklearn; sk_ver = f" (scikit-learn {sklearn.__version__} installed)"
-    except Exception:
-        pass
-    st.error(
-        f"❌ Could not load models from `models/` folder.\n\n"
-        f"**Error:** `{e}`{sk_ver}\n\n"
-        "**Most likely cause:** The `.pkl` model files were saved with a different "
-        "version of scikit-learn than what is currently installed.\n\n"
-        "**Fix options:**\n"
-        "1. Re-save your models in the same Python/sklearn environment as this app\n"
-        "2. Pin `scikit-learn==<version used during training>` in your `requirements.txt`\n"
-        "3. Make sure the `models/` folder is in the same directory as `app.py`"
-    )
+    st.error(f"❌ Could not load models from `models/` folder.\n\nError: {e}\n\n"
+             "Make sure the `models/` folder is in the same directory as `app.py`.")
     st.stop()
 
 HIST_LABELS = SERIES['hist_labels']
@@ -1072,8 +960,7 @@ with tab4:
     CV-weighted) — best test MAPE of <b>6.91%</b>.
     </div>""", unsafe_allow_html=True)
 
-
-# ─────────────────────────────────────────────────────────────
+    # ─────────────────────────────────────────────────────────────
 # FOOTER
 # ─────────────────────────────────────────────────────────────
 st.markdown('---')
@@ -1086,3 +973,4 @@ All predictions computed live from saved models in <code>models/</code> folder &
 NACADA Bi-Annual Reports 2021–2025
 </div>
 """, unsafe_allow_html=True)
+    
