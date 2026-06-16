@@ -510,7 +510,11 @@ with st.sidebar:
     st.markdown("<hr style='border-color:rgba(255,255,255,.3);'>", unsafe_allow_html=True)
     st.markdown(f"""
     <div style='font-size:.8rem;color:#C8F0D0;'>
-    <br>
+    <b>Student:</b> William Maureen Ndinda<br>
+    <b>Reg:</b> SCT213-C002-0048/2022<br>
+    <b>Programme:</b> BSc Data Science<br>
+    <b>JKUAT Karen | 2026</b><br><br>
+    <b>Models loaded from:</b><br>
     <code style='color:#A8DBB8;font-size:.75rem;'>models/</code> folder ✓
     </div>
     """, unsafe_allow_html=True)
