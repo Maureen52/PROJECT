@@ -7,12 +7,17 @@
 #   pip install streamlit plotly scikit-learn numpy pandas
 #   streamlit run app.py
 #
+#   NOTE: this file must stay in the same folder as
+#   "kenya_counties.geojson" (ships alongside it) — that file
+#   supplies the county boundaries used by the risk map in
+#   tab 3 and needs no internet connection to render.
+#
 # WHAT THIS APP DOES:
 #   1. Shows the full historical seizure series (2021–2025)
 #   2. Lets user input the latest NACADA observed value
 #   3. Forecasts the next 4 periods using XGBoost, LSTM, or E2 Ensemble
 #   4. Displays forecast values and confidence range
-#   5. Shows county High-tier risk zone
+#   5. Shows county High-tier risk zone on an interactive map of Kenya
 #   6. User can switch between all five models + ensemble
 # ============================================================
 
@@ -23,7 +28,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from sklearn.ensemble import GradientBoostingRegressor
 import json
-from urllib.request import urlopen
+from pathlib import Path
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -229,6 +234,148 @@ CLUSTER_CFG = {
                 'share':'1.0%','action':'Review enforcement capacity.',
                 'desc':'Low recorded seizures — may reflect capacity gaps.'},
 }
+
+# ─────────────────────────────────────────────────────────────
+# KENYA COUNTY MAP — geometry, colours, trafficking corridors
+# ─────────────────────────────────────────────────────────────
+LOW_GRAY = '#9B9B9B'
+DEEP_RED = '#6B0000'   # deeper red than RED, reserved for trafficking corridors
+
+MAP_TIER_COLORS = {'High': RED, 'Med-High': AMB, 'Medium': BLU, 'Low': LOW_GRAY}
+MAP_TIER_ORDER  = ['High', 'Med-High', 'Medium', 'Low']
+
+# Representative (guaranteed-inside-polygon) point for every one of Kenya's
+# 47 counties — used to place invisible hover markers and to anchor the
+# trafficking-corridor lines. "Railways (CPIU)" is a NACADA reporting unit,
+# not a geographic county, so it has no entry here and is excluded from the map.
+COUNTY_REP_POINTS = {
+    "Nairobi": (36.826, -1.3086), "Mombasa": (39.6507, -4.0148), "Kwale": (39.0871, -4.1715),
+    "Kilifi": (39.6693, -3.1687), "Tana River": (39.5568, -1.5487), "Lamu": (40.804, -2.0886),
+    "Taita Taveta": (38.383, -3.3986), "Garissa": (40.3522, -0.5216), "Wajir": (40.0276, 1.9378),
+    "Mandera": (40.7151, 3.1966), "Marsabit": (37.7045, 2.8577), "Isiolo": (38.7387, 1.0358),
+    "Meru": (37.7876, 0.207), "Tharaka Nithi": (37.9563, -0.1946), "Embu": (37.6635, -0.5243),
+    "Kitui": (38.3782, -1.591), "Machakos": (37.4013, -1.2616), "Nyandarua": (36.4975, -0.3896),
+    "Nyeri": (36.9238, -0.3408), "Kirinyaga": (37.2999, -0.477), "Muranga": (37.0, -0.8197),
+    "Kiambu": (36.8517, -1.0437), "Turkana": (35.3059, 3.1667), "West Pokot": (35.2194, 1.8786),
+    "Samburu": (36.9389, 1.5394), "Uasin Gishu": (35.3143, 0.504), "Elgeyo Marakwet": (35.5653, 0.7768),
+    "Nandi": (35.1372, 0.2139), "Baringo": (36.0182, 0.7259), "Laikipia": (36.8219, 0.2728),
+    "Nakuru": (36.0967, -0.4618), "Narok": (35.4687, -1.3034), "Kajiado": (36.7999, -2.1308),
+    "Makueni": (37.8729, -2.2473), "Kericho": (35.2244, -0.3205), "Kakamega": (34.8028, 0.4926),
+    "Vihiga": (34.6976, 0.058), "Bungoma": (34.7236, 0.7936), "Busia": (34.2622, 0.3666),
+    "Siaya": (34.2006, -0.0657), "Homa Bay": (34.314, -0.5652), "Migori": (34.3423, -1.0292),
+    "Kisii": (34.7543, -0.7286), "Bomet": (35.2379, -0.7153), "Nyamira": (34.9417, -0.6342),
+    "Kisumu": (34.7801, -0.1895), "Trans Nzoia": (34.9946, 1.0355),
+}
+
+# The four trafficking corridors named in the NACADA risk assessment, each
+# anchored at its border/coastal entry county and converging on Nairobi —
+# the national hub and single highest-seizure county.
+TRAFFICKING_CORRIDORS = [
+    ('Migori',   'Tanzania border corridor'),
+    ('Busia',    'Uganda border corridor'),
+    ('Kilifi',   'Indian Ocean coast corridor'),
+    ('Marsabit', 'Northern Corridor / Moyale highway'),
+]
+
+
+@st.cache_data
+def load_kenya_geojson():
+    """Load the simplified 47-county boundary file shipped next to app.py."""
+    path = Path(__file__).resolve().parent / 'kenya_counties.geojson'
+    try:
+        with open(path, 'r', encoding='utf-8') as f:
+            geo = json.load(f)
+        return {feat['properties']['county']: feat for feat in geo['features']}
+    except Exception:
+        return None
+
+
+def _polygon_rings(geometry):
+    """Return a list of exterior-ring coordinate lists for Polygon/MultiPolygon geometry."""
+    rings = []
+    if geometry['type'] == 'Polygon':
+        rings.append(geometry['coordinates'][0])
+    elif geometry['type'] == 'MultiPolygon':
+        for poly in geometry['coordinates']:
+            rings.append(poly[0])
+    return rings
+
+
+def build_kenya_risk_map(county_to_feature):
+    """Build the Kenya county choropleth (filled polygons drawn with plain
+    Scatter traces — no geo/Mapbox subplot, so it renders with zero external
+    network calls) colour-coded by NACADA cluster tier, with the four
+    trafficking corridors drawn in a deeper red converging on Nairobi."""
+    fig = go.Figure()
+
+    for tier in MAP_TIER_ORDER:
+        counties_in_tier = [n for n, d in COUNTY_DATA.items()
+                            if d['cluster'] == tier and n in county_to_feature]
+        if not counties_in_tier:
+            continue
+        xs, ys = [], []
+        for n in counties_in_tier:
+            for ring in _polygon_rings(county_to_feature[n]['geometry']):
+                for lon, lat in ring:
+                    xs.append(lon); ys.append(lat)
+                xs.append(None); ys.append(None)
+        fig.add_trace(go.Scatter(
+            x=xs, y=ys, mode='lines', fill='toself',
+            fillcolor=MAP_TIER_COLORS[tier],
+            line=dict(color='white', width=0.7),
+            name=f'{tier} Tier', hoverinfo='skip',
+        ))
+
+    # invisible hover markers so each county shows its own tooltip
+    hx, hy, htxt = [], [], []
+    for n in county_to_feature:
+        d = COUNTY_DATA.get(n)
+        if not d:
+            continue
+        lon, lat = COUNTY_REP_POINTS[n]
+        hx.append(lon); hy.append(lat)
+        htxt.append(f"<b>{n}</b><br>Tier: {d['cluster']}<br>"
+                    f"Total 2021–2025: {d['total_kg']:,.1f} kg")
+    fig.add_trace(go.Scatter(
+        x=hx, y=hy, mode='markers',
+        marker=dict(size=16, color='rgba(0,0,0,0)'),
+        text=htxt, hovertemplate='%{text}<extra></extra>', showlegend=False,
+    ))
+
+    # trafficking corridors — deeper red, converging on Nairobi
+    nb_lon, nb_lat = COUNTY_REP_POINTS['Nairobi']
+    for i, (county, label) in enumerate(TRAFFICKING_CORRIDORS):
+        lon0, lat0 = COUNTY_REP_POINTS[county]
+        fig.add_trace(go.Scatter(
+            x=[lon0, nb_lon], y=[lat0, nb_lat],
+            mode='lines+markers',
+            line=dict(color=DEEP_RED, width=4),
+            marker=dict(size=[10, 0], color=DEEP_RED, symbol='triangle-up'),
+            name='Trafficking corridor', legendgroup='corridors',
+            showlegend=(i == 0),
+            text=[f"{label} ({county} entry point)", "Nairobi (national hub)"],
+            hovertemplate='%{text}<extra></extra>',
+        ))
+
+    fig.add_trace(go.Scatter(
+        x=[nb_lon], y=[nb_lat], mode='markers',
+        marker=dict(size=14, color=GRN, symbol='star', line=dict(width=1.5, color='white')),
+        name='National hub (Nairobi)',
+        text=['Nairobi — national hub, highest seizure volume'],
+        hovertemplate='%{text}<extra></extra>',
+    ))
+
+    fig.update_xaxes(visible=False, scaleanchor='y', scaleratio=1)
+    fig.update_yaxes(visible=False)
+    fig.update_layout(
+        height=620, plot_bgcolor='#F0F7F1', paper_bgcolor='#F0F7F1',
+        margin=dict(t=10, b=10, l=0, r=0),
+        legend=dict(orientation='h', yanchor='bottom', y=-0.07, xanchor='center', x=0.5,
+                    bgcolor='rgba(255,255,255,.9)', bordercolor=GRN2, borderwidth=1),
+    )
+    return fig
+
+
 
 # ─────────────────────────────────────────────────────────────
 # MODEL TRAINING FUNCTIONS
@@ -807,111 +954,32 @@ with tab3:
     Northern Corridor/Moyale highway (Marsabit)
     </div>""", unsafe_allow_html=True)
 
-
-    # ══════════════════════════════════════════════════════════════
-# TAB 3 — COUNTY RISK MAP
-# ══════════════════════════════════════════════════════════════
-with tab3:
-    st.markdown('<div class="sec-title">🏘️ County Cluster Risk Zones</div>',
+    # ─────────────────────────────────────────────────────
+    # KENYA COUNTY RISK MAP
+    # ─────────────────────────────────────────────────────
+    st.markdown('<div class="sec-title">🗺️ Kenya County Risk Map</div>',
                 unsafe_allow_html=True)
 
-    # ... (keep existing county lookup code unchanged) ...
-
-    # ── INTERACTIVE KENYA MAP WITH BUBBLES & TRAFFICKING ROUTES ──
-    st.markdown('<div class="sec-title">🗺️ Interactive Kenya County Map (Bubble + Clusters)</div>',
-                unsafe_allow_html=True)
-
-    # Load Kenya counties GeoJSON
-    with st.spinner("Loading Kenya county boundaries..."):
-        try:
-            geojson_url = "https://raw.githubusercontent.com/wmgeolab/geoBoundaries/master/releaseData/gbOpen/KEN/ADM1/geoBoundaries-KEN-ADM1.geojson"
-            with urlopen(geojson_url) as response:
-                counties_geo = json.load(response)
-        except:
-            st.error("Could not load map data. Using fallback.")
-            counties_geo = None
-
-    # Prepare data for map
-    map_df = pd.DataFrame([
-        {'County': n, 'Cluster': d['cluster'], 'Total_kg': d['total_kg'], 'Trend': d['trend']}
-        for n, d in COUNTY_DATA.items()
-    ])
-
-    # Color mapping
-    color_map = {
-        'High': '#C00000',      # Red
-        'Med-High': '#EF9F27',  # Orange
-        'Medium': '#2E5FA3',    # Blue
-        'Low': '#888780'        # Gray
-    }
-
-    if counties_geo:
-        # Choropleth base + bubbles
-        fig_map = px.choropleth(
-            map_df,
-            geojson=counties_geo,
-            locations='County',
-            featureidkey="properties.shapeName",  # Adjust if needed based on GeoJSON properties
-            color='Cluster',
-            color_discrete_map=color_map,
-            scope="africa",
-            title="Kenya Counties by Risk Cluster",
-            hover_data=['Total_kg', 'Trend']
-        )
-
-        # Add bubbles sized by total seizures
-        fig_map.add_scattergeo(
-            lon=[36.8,  # Approximate centroids - in real app you'd add accurate lat/lon
-                 34.8, 35.5, 37.5, 39.5, 34.5,  # examples
-                 # ... you'd need full centroid dict
-                ],
-            lat=[ -1.3, -0.5, 0.5, 2.0, -4.0, 0.0],
-            text=map_df['County'],
-            mode='markers+text',
-            marker=dict(
-                size=map_df['Total_kg'] / 50,  # scale bubble size
-                color=map_df['Cluster'].map(color_map),
-                line=dict(width=1, color='white'),
-                opacity=0.8
-            ),
-            name='Seizure Volume (bubble size)'
-        )
-
-        fig_map.update_geos(
-            showcountries=True, countrycolor="lightgray",
-            showsubunits=True, subunitcolor="darkgray",
-            projection_type="mercator",
-            lataxis_range=[-5, 5], lonaxis_range=[33, 42]
-        )
-        fig_map.update_layout(
-            height=600,
-            margin={"r":0,"t":40,"l":0,"b":0},
-            legend=dict(orientation="h", yanchor="bottom", y=1.02)
-        )
-
-        st.plotly_chart(fig_map, use_container_width=True)
-
-        st.markdown("""
-        <div class='info'>
-        <b>Map Legend:</b><br>
-        • <b>Color</b>: County Risk Cluster (Red=High, Orange=Med-High, etc.)<br>
-        • <b>Bubble Size</b>: Total seizures 2021–2025 (larger = higher volume)<br>
-        • Trafficking corridors highlighted in deeper red (approximate)
-        </div>
-        """, unsafe_allow_html=True)
-
+    county_to_feature = load_kenya_geojson()
+    if county_to_feature is None:
+        st.markdown("""<div class='warn'>
+        ⚠️ Map unavailable: <code>kenya_counties.geojson</code> was not found
+        next to <code>app.py</code>. Keep both files in the same folder and
+        restart the app to see the county map.
+        </div>""", unsafe_allow_html=True)
     else:
-        st.warning("Map visualization unavailable. Please check internet connection.")
-
-    # High-tier alert (existing)
-    high_counties = [n for n,d in COUNTY_DATA.items() if d['cluster']=='High']
-    st.markdown(f"""<div class='danger' style='color:#000000;'>
-    🔴 <b>10 HIGH-TIER COUNTIES (63.5% of national seizures):</b><br>
-    {" · ".join(high_counties)}<br><br>
-    <b>Trafficking corridors:</b> Tanzania border (Migori) ·
-    Uganda border (Busia) · Indian Ocean coast (Kilifi) ·
-    Northern Corridor/Moyale highway (Marsabit)
-    </div>""", unsafe_allow_html=True)
+        risk_map = build_kenya_risk_map(county_to_feature)
+        st.plotly_chart(risk_map, use_container_width=True)
+        st.markdown("""<div class='info'>
+        Counties are filled by NACADA cluster tier — <b>High</b> (red),
+        <b>Med-High</b> (amber), <b>Medium</b> (blue), <b>Low</b> (grey).
+        The four <b>deeper-red</b> lines trace the trafficking corridors
+        named in the NACADA risk assessment, each running from its
+        border/coastal entry county to Nairobi, the national hub and
+        single highest-seizure county. Hover any county for its tier and
+        2021–2025 total. <i>Railways (CPIU) is a NACADA reporting unit,
+        not a geographic county, so it is excluded from the map.</i>
+        </div>""", unsafe_allow_html=True)
 
     # Full county table
     st.markdown('<div class="sec-title">📋 All 49 Counties — Cluster Assignments</div>',
