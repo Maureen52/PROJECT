@@ -90,6 +90,18 @@ div.stButton > button {
 }
 div.stButton > button:hover { background:#1A5C2A !important; }
 
+table.dark-tbl, table.dark-tbl td, table.dark-tbl th {
+    background:#2b2b2b !important;
+    color:#ffffff !important;
+    border-color:#444 !important;
+}
+table.dark-tbl tr:nth-child(even) td,
+table.dark-tbl tr:nth-child(even) th {
+    background:#262626 !important;
+}
+
+table, th, td { border-collapse:collapse; }
+
 .badge-h  { background:#FDECEA; color:#C00000;  border:2px solid #C00000;
             padding:.35rem 1rem; border-radius:20px; font-weight:700; }
 .badge-mh { background:#FFF3CD; color:#7F4F00;  border:2px solid #EF9F27;
@@ -672,9 +684,8 @@ with tab2:
     df_show = pd.DataFrame(rows)
 
     def hl(row):
-        if row['Type'] == '🔮 Forecast':
-            return ['background-color:#E8F5E9; font-weight:bold']*len(row)
-        return ['']*len(row)
+        # Dark theme for all rows
+        return ['background-color:#2b2b2b; color:#ffffff']*len(row)
 
     st.dataframe(df_show.style.apply(hl, axis=1),
                  use_container_width=True, hide_index=True)
@@ -703,9 +714,8 @@ with tab2:
     df_cmp = pd.DataFrame(cmp_rows)
 
     def hl2(row):
-        if 'Ensemble' in str(row['Model']):
-            return ['background-color:#E8F5E9; font-weight:bold']*len(row)
-        return ['']*len(row)
+        # Dark theme for all rows
+        return ['background-color:#2b2b2b; color:#ffffff']*len(row)
 
     st.dataframe(df_cmp.style.apply(hl2, axis=1),
                  use_container_width=True, hide_index=True)
@@ -750,23 +760,23 @@ with tab3:
                 st.markdown(f"""
                 <div style='background:white;border:1px solid #ddd;
                      border-radius:12px;padding:1.2rem;'>
-                <table style='width:100%;border-collapse:collapse;'>
-                  <tr><td style='padding:.5rem;color:#666;width:42%;'><b>Cluster Tier</b></td>
+                <table class='dark-tbl' style='width:100%;border-collapse:collapse;'>
+                  <tr><td style='padding:.5rem;width:42%;'><b>Cluster Tier</b></td>
                       <td style='padding:.5rem;color:{ci["color"]};font-weight:700;'>
                         {d["cluster"]}</td></tr>
-                  <tr style='background:#f9f9f9;'>
-                    <td style='padding:.5rem;color:#666;'><b>National Share</b></td>
+                  <tr>
+                    <td style='padding:.5rem;'><b>National Share</b></td>
                     <td style='padding:.5rem;font-weight:700;color:{ci["color"]};'>
                       {ci["share"]} of all seizures</td></tr>
-                  <tr><td style='padding:.5rem;color:#666;'><b>Total (2021–2025)</b></td>
+                  <tr><td style='padding:.5rem;'><b>Total (2021–2025)</b></td>
                       <td style='padding:.5rem;'>{d["total_kg"]:,.1f} kg</td></tr>
-                  <tr style='background:#f9f9f9;'>
-                    <td style='padding:.5rem;color:#666;'><b>Avg per Period</b></td>
+                  <tr>
+                    <td style='padding:.5rem;'><b>Avg per Period</b></td>
                     <td style='padding:.5rem;'>{d["total_kg"]/9:,.1f} kg</td></tr>
-                  <tr><td style='padding:.5rem;color:#666;'><b>Trend</b></td>
+                  <tr><td style='padding:.5rem;'><b>Trend</b></td>
                       <td style='padding:.5rem;'>{d["trend"]}</td></tr>
-                  <tr style='background:#f9f9f9;'>
-                    <td style='padding:.5rem;color:#666;'><b>NACADA Action</b></td>
+                  <tr>
+                    <td style='padding:.5rem;'><b>NACADA Action</b></td>
                     <td style='padding:.5rem;font-weight:600;color:{ci["color"]};'>
                       {ci["action"]}</td></tr>
                 </table></div>""", unsafe_allow_html=True)
@@ -812,8 +822,8 @@ with tab3:
                'Medium':'#D6E4F7','Low':'#F2F2F2'}
 
     def hl_tier(row):
-        bg = tier_bg.get(row['Cluster Tier'],'')
-        return [f'background-color:{bg}']*len(row)
+        # Dark theme for all rows
+        return ['background-color:#2b2b2b; color:#ffffff']*len(row)
 
     st.dataframe(df_ct.style.apply(hl_tier, axis=1),
                  use_container_width=True, hide_index=True, height=440)
@@ -849,11 +859,8 @@ with tab4:
     df_cmp2 = pd.DataFrame(cmp)
 
     def hl3(row):
-        if 'Ensemble' in str(row['Model']):
-            return ['background-color:#E8F5E9;font-weight:bold']*len(row)
-        if row['Model']=='XGBoost':
-            return ['background-color:#FFF8E8']*len(row)
-        return ['']*len(row)
+        # Dark theme for all rows
+        return ['background-color:#2b2b2b; color:#ffffff']*len(row)
 
     st.dataframe(df_cmp2.style.apply(hl3, axis=1),
                  use_container_width=True, hide_index=True)
