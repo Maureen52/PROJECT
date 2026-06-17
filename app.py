@@ -22,6 +22,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from sklearn.ensemble import GradientBoostingRegressor
+import json
 import warnings
 warnings.filterwarnings('ignore')
 
@@ -805,6 +806,96 @@ with tab3:
     Northern Corridor/Moyale highway (Marsabit)
     </div>""", unsafe_allow_html=True)
 
+    # Bubble map (county centroids required in data/county_centroids.json)
+    try:
+        with open('data/county_centroids.json', 'r', encoding='utf-8') as fh:
+            centroids = json.load(fh)
+    except Exception:
+        centroids = {}
+
+    # Merge centroid coords into COUNTY_DATA where available
+    map_rows = []
+    for nm, d in COUNTY_DATA.items():
+        cd = centroids.get(nm, {})
+        if 'lat' in cd and 'lon' in cd:
+            map_rows.append({
+                'County': nm,
+                'lat': cd['lat'], 'lon': cd['lon'],
+                'total_kg': d.get('total_kg', 0.0),
+                'cluster': d.get('cluster', 'Low'),
+                'trend': d.get('trend', '')
+            })
+
+    if map_rows:
+        map_df = pd.DataFrame(map_rows)
+
+        # Style palette using existing cluster config
+        clr_map2 = {k: v['color'] for k, v in CLUSTER_CFG.items()}
+
+        # Layout color tokens (match app theme)
+        BG = '#F0F7F1'
+        BG2 = '#E8F5E9'
+        BG3 = '#FFFFFF'
+        TXT = '#000000'
+        BORDER = '#DDDDDD'
+
+        map_df['color'] = map_df['cluster'].map(clr_map2)
+
+        fig_map = go.Figure()
+        for cl in ['High', 'Med-High', 'Medium', 'Low']:
+            sub = map_df[map_df['cluster'] == cl]
+            if sub.empty: continue
+            ci = CLUSTER_CFG[cl]
+            fig_map.add_trace(go.Scattergeo(
+                lat=sub['lat'], lon=sub['lon'],
+                mode='markers+text',
+                name=f'{cl} tier',
+                marker=dict(
+                    size=np.sqrt(sub['total_kg']/50).clip(5,40),
+                    color=ci['color'],
+                    opacity=0.85,
+                    line=dict(width=1, color=BORDER),
+                ),
+                text=sub['County'],
+                textposition='top center',
+                textfont=dict(size=8, color=TXT),
+                hovertemplate=(
+                    '<b>%{text}</b><br>'
+                    f'Cluster: {cl}<br>'
+                    'Total: <b>%{customdata[0]:,.0f} kg</b><br>'
+                    'Trend: %{customdata[1]}<extra></extra>'
+                ),
+                customdata=sub[['total_kg','trend']].values,
+            ))
+
+        fig_map.update_layout(
+            geo=dict(
+                scope='africa',
+                center=dict(lat=0.5, lon=37.5),
+                projection_scale=6,
+                showland=True, landcolor='#FFFFFF',
+                showocean=False,
+                showcountries=True, countrycolor='#CCCCCC',
+                showcoastlines=True, coastlinecolor='#CCCCCC',
+            ),
+            paper_bgcolor=BG, plot_bgcolor=BG,
+            font=dict(color=TXT),
+            legend=dict(bgcolor=BG3, bordercolor=BORDER, borderwidth=1, font=dict(color=TXT)),
+            height=480,
+            margin=dict(t=8, b=8, l=0, r=0),
+            title=dict(text=f'<b>Kenya Cannabis Seizure Hotspots · 2021–2025</b>',
+                       font=dict(color=TXT, size=13), x=0.01),
+        )
+        st.plotly_chart(fig_map, use_container_width=True)
+        st.markdown("<div class='info'>Bubble size is proportional to total seizure volume. Colour indicates K-Means cluster tier.</div>", unsafe_allow_html=True)
+
+        # Fallback: also show Streamlit's built-in map (uses deck.gl) so points always appear
+        try:
+            st.map(map_df[['lat', 'lon']].rename(columns={'lat':'lat','lon':'lon'}), use_container_width=True)
+        except Exception:
+            # ignore if map fails in this environment
+            pass
+
     # Full county table
     st.markdown('<div class="sec-title">📋 All 49 Counties — Cluster Assignments</div>',
                 unsafe_allow_html=True)
@@ -886,8 +977,6 @@ st.markdown('---')
 st.markdown(f"""
 <div style='text-align:center;color:{GRAY};font-size:.82rem;padding:.4rem;'>
 🌿 Kenya Cannabis Seizure Forecast Tool &nbsp;|&nbsp;
-William Maureen Ndinda (SCT213-C002-0048/2022) &nbsp;|&nbsp;
-BSc Data Science &amp; Analytics &nbsp;|&nbsp; JKUAT Karen &nbsp;|&nbsp; 2026<br>
 Data: NACADA Bi-Annual Reports 2021–2025 &nbsp;|&nbsp;
 Models: E2 Ensemble · XGBoost · LSTM · SARIMA · ARIMA · Prophet
 </div>
