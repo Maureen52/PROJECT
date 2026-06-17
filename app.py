@@ -868,17 +868,16 @@ with tab3:
                 customdata=sub[['total_kg','trend']].values,
             ))
 
-        fig_map.update_geos(
-            scope='africa',
-            center=dict(lat=0.5, lon=37.5),
-            projection_scale=6,
-            showland=True, landcolor='#FFFFFF',
-            showocean=False,
-            showcountries=True, countrycolor='#CCCCCC',
-            showcoastlines=True, coastlinecolor='#CCCCCC',
-            bgcolor=BG,
-        )
         fig_map.update_layout(
+            geo=dict(
+                scope='africa',
+                center=dict(lat=0.5, lon=37.5),
+                projection_scale=6,
+                showland=True, landcolor='#FFFFFF',
+                showocean=False,
+                showcountries=True, countrycolor='#CCCCCC',
+                showcoastlines=True, coastlinecolor='#CCCCCC',
+            ),
             paper_bgcolor=BG, plot_bgcolor=BG,
             font=dict(color=TXT),
             legend=dict(bgcolor=BG3, bordercolor=BORDER, borderwidth=1, font=dict(color=TXT)),
@@ -971,8 +970,6 @@ st.markdown('---')
 st.markdown(f"""
 <div style='text-align:center;color:{GRAY};font-size:.82rem;padding:.4rem;'>
 🌿 Kenya Cannabis Seizure Forecast Tool &nbsp;|&nbsp;
-William Maureen Ndinda (SCT213-C002-0048/2022) &nbsp;|&nbsp;
-BSc Data Science &amp; Analytics &nbsp;|&nbsp; JKUAT Karen &nbsp;|&nbsp; 2026<br>
 Data: NACADA Bi-Annual Reports 2021–2025 &nbsp;|&nbsp;
 Models: E2 Ensemble · XGBoost · LSTM · SARIMA · ARIMA · Prophet
 </div>
