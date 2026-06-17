@@ -889,6 +889,13 @@ with tab3:
         st.plotly_chart(fig_map, use_container_width=True)
         st.markdown("<div class='info'>Bubble size is proportional to total seizure volume. Colour indicates K-Means cluster tier.</div>", unsafe_allow_html=True)
 
+        # Fallback: also show Streamlit's built-in map (uses deck.gl) so points always appear
+        try:
+            st.map(map_df[['lat', 'lon']].rename(columns={'lat':'lat','lon':'lon'}), use_container_width=True)
+        except Exception:
+            # ignore if map fails in this environment
+            pass
+
     # Full county table
     st.markdown('<div class="sec-title">📋 All 49 Counties — Cluster Assignments</div>',
                 unsafe_allow_html=True)
