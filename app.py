@@ -68,7 +68,7 @@ section[data-testid="stSidebar"] .stSlider label { color: #C8F0D0 !important; }
 .kpi-lbl  { color: #2D8B47; font-size: 0.82rem; font-weight: 600; margin: 0.2rem 0 0; }
 .kpi-sub  { color: #888; font-size: 0.76rem; margin: 0; }
 
-.info  { background:#E8F5E9; border-left:4px solid #2D8B47;
+.info  { background:#E8F5E9; border-left:4px solid #2D8B47; color:#000;
          padding:.8rem 1rem; border-radius:0 8px 8px 0; margin:.6rem 0; }
 .warn  { background:#FFF8E1; border-left:4px solid #EF9F27;
          padding:.8rem 1rem; border-radius:0 8px 8px 0; margin:.6rem 0; }
