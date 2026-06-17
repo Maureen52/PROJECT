@@ -21,6 +21,10 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import plotly.express as px
+import json
+import requests
+import os
 from sklearn.ensemble import GradientBoostingRegressor
 import warnings
 warnings.filterwarnings('ignore')
@@ -438,6 +442,10 @@ with st.sidebar:
     st.markdown("<hr style='border-color:rgba(255,255,255,.3);'>", unsafe_allow_html=True)
     st.markdown("""
     <div style='font-size:.8rem;color:#C8F0D0;'>
+    <b>Student:</b> William Maureen Ndinda<br>
+    <b>Reg:</b> SCT213-C002-0048/2022<br>
+    <b>Programme:</b> BSc Data Science<br>
+    <b>JKUAT Karen | 2026</b><br><br>
     <b>Data:</b> NACADA 2021–2025<br>
     <b>Models:</b> XGBoost · LSTM · E2 Ensemble
     </div>
@@ -482,6 +490,7 @@ st.markdown(f"""
     Model: <b>{selected_model}</b> &nbsp;|&nbsp;
     NACADA Data 2021–2025 &nbsp;|&nbsp;
     4-Period Forecast (2025 H2 – 2027 H1) &nbsp;|&nbsp;
+    BSc Data Science, JKUAT Karen
   </p>
 </div>
 """, unsafe_allow_html=True)
@@ -829,6 +838,129 @@ with tab3:
 
     st.dataframe(df_ct.style.apply(hl_tier, axis=1),
                  use_container_width=True, hide_index=True, height=440)
+
+    # ----- County choropleth (attempt to load GeoJSON, uses FINALIZED.csv) -----
+    st.markdown('<div class="sec-title">🗺️ County Map — Cluster Tiers & Corridors</div>',
+                unsafe_allow_html=True)
+
+    # Try to read FINALIZED.csv to get county list if available
+    try:
+        df_final = pd.read_csv('FINALIZED.csv')
+    except Exception:
+        df_final = None
+
+    # Build mapping DataFrame from COUNTY_DATA (fallback) or FINALIZED.csv
+    map_rows = []
+    if df_final is not None:
+        # FINALIZED.csv may use uppercase county names; attempt to match to COUNTY_DATA
+        counties = [c.strip() for c in df_final.iloc[:,0].astype(str).tolist()]
+        for c in counties:
+            if c.upper() in ['TOTAL','RAILWAYS','KAPU','']:
+                continue
+            # try direct match or case-insensitive
+            match = None
+            for k in COUNTY_DATA:
+                if k.lower() == c.lower() or k.lower() == c.replace("/"," ").lower():
+                    match = k; break
+            if match:
+                d = COUNTY_DATA[match]
+                map_rows.append({'county':match, 'cluster':d['cluster'], 'total_kg':d['total_kg']})
+            else:
+                # include as-is (will be matched against GeoJSON names heuristically)
+                map_rows.append({'county':c.title(), 'cluster':'Low', 'total_kg':0})
+    else:
+        for k,v in COUNTY_DATA.items():
+            map_rows.append({'county':k, 'cluster':v['cluster'], 'total_kg':v['total_kg']})
+
+    df_map = pd.DataFrame(map_rows)
+
+    # Load GeoJSON: prefer local file data/kenya_counties.geojson, otherwise try a public URL
+    geojson = None
+    geo_path = 'data/kenya_counties.geojson'
+    if os.path.exists(geo_path):
+        with open(geo_path,'r',encoding='utf-8') as fh:
+            geojson = json.load(fh)
+    else:
+        urls = [
+            'https://raw.githubusercontent.com/cjddmut/kenya_counties_geojson/master/kenya-counties.geojson',
+            'https://raw.githubusercontent.com/kenwambui/kenya-counties-geojson/master/kenya-counties.geojson',
+        ]
+        for u in urls:
+            try:
+                r = requests.get(u, timeout=8)
+                if r.status_code == 200:
+                    geojson = r.json()
+                    # save a local copy for future runs
+                    os.makedirs('data', exist_ok=True)
+                    with open(geo_path,'w',encoding='utf-8') as fh:
+                        json.dump(geojson, fh)
+                    break
+            except Exception:
+                geojson = None
+
+    if geojson is None:
+        st.warning('Kenya counties GeoJSON not found. Upload `data/kenya_counties.geojson` or allow download.')
+    else:
+        # detect property that contains county name
+        prop_name = None
+        sample_props = geojson.get('features',[{}])[0].get('properties',{}) if geojson.get('features') else {}
+        for k in ('NAME_1','NAME','county','County','COUNTY','COUNTY_NAM','CountyName','COUNTYNAME'):
+            if k in sample_props:
+                prop_name = k; break
+        if prop_name is None:
+            # fallback to first string property
+            for k,v in sample_props.items():
+                if isinstance(v,str): prop_name = k; break
+
+        # normalize GeoJSON property values to match df_map
+        for f in geojson.get('features',[]):
+            props = f.setdefault('properties',{})
+            if prop_name and prop_name in props:
+                props['__nm__'] = str(props[prop_name]).strip()
+            else:
+                props['__nm__'] = props.get('name', props.get('NAME', '')).strip()
+
+        # Try to match df_map county names to geojson names
+        df_map['county_key'] = df_map['county'].apply(lambda x: x.strip())
+
+        # Choropleth
+        color_map = {k:CLUSTER_CFG[k]['color'] for k in CLUSTER_CFG}
+        try:
+            fig_map = px.choropleth_mapbox(
+                df_map,
+                geojson=geojson,
+                locations='county_key',
+                featureidkey='properties.__nm__',
+                color='cluster',
+                color_discrete_map=color_map,
+                hover_name='county',
+                hover_data=['total_kg'],
+                center={'lat':-1.286389,'lon':36.817223},
+                mapbox_style='open-street-map',
+                zoom=5,
+            )
+
+            fig_map.update_layout(margin={'r':0,'t':0,'l':0,'b':0}, height=540)
+
+            # Add trafficking corridors as simple polylines (approximate coords)
+            corridors = [
+                {'name':'Tanzania border (Migori)','coords':[ (34.768,-1.063),(35.001,-1.3),(34.9,-1.4) ]},
+                {'name':'Uganda border (Busia)','coords':[ (34.104,0.460),(34.260,0.433),(34.1,0.4) ]},
+                {'name':'Indian Ocean coast (Kilifi)','coords':[ (39.833,-3.634),(39.9,-3.5),(40.0,-3.4) ]},
+                {'name':'Northern Corridor/Moyale (Marsabit)','coords':[ (39.6,2.3),(39.1,1.5),(38.5,1.0) ]},
+            ]
+
+            fig = go.Figure(fig_map)
+            for c in corridors:
+                lons = [p[0] for p in c['coords']]
+                lats = [p[1] for p in c['coords']]
+                fig.add_trace(go.Scattermapbox(lon=lons, lat=lats, mode='lines',
+                                               line=dict(width=3,color='black'), name=c['name']))
+            fig.update_layout(mapbox={'style':'open-street-map','center':{'lat':-1.286389,'lon':36.817223},'zoom':5})
+
+            st.plotly_chart(fig, use_container_width=True)
+        except Exception as e:
+            st.error(f'Failed to render county map: {e}')
 
 
 # ══════════════════════════════════════════════════════════════
