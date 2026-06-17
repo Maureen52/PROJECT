@@ -797,7 +797,7 @@ with tab3:
 
     # High-tier alert box
     high_counties = [n for n,d in COUNTY_DATA.items() if d['cluster']=='High']
-    st.markdown(f"""<div class='danger'>
+    st.markdown(f"""<div class='danger' style='color:#000000;'>
     🔴 <b>10 HIGH-TIER COUNTIES (63.5% of national seizures):</b><br>
     {" · ".join(high_counties)}<br><br>
     <b>Trafficking corridors:</b> Tanzania border (Migori) ·
