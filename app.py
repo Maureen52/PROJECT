@@ -810,7 +810,9 @@ with tab3:
 
     # Kenya county cluster map
     st.markdown('<div class="sec-title">🗺️ Kenya County Cluster Map</div>', unsafe_allow_html=True)
-    centroid_path = os.path.join('data', 'county_centroids.json')
+    # Resolve centroid path relative to this file so app works regardless of CWD
+    base_dir = os.path.dirname(__file__)
+    centroid_path = os.path.join(base_dir, 'data', 'county_centroids.json')
     if os.path.exists(centroid_path):
         with open(centroid_path, 'r', encoding='utf-8') as fh:
             centroids = json.load(fh)
