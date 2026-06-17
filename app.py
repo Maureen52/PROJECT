@@ -20,9 +20,6 @@ import streamlit as st
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import plotly.express as px
-import json
-import os
 from plotly.subplots import make_subplots
 from sklearn.ensemble import GradientBoostingRegressor
 import warnings
@@ -807,70 +804,6 @@ with tab3:
     Uganda border (Busia) · Indian Ocean coast (Kilifi) ·
     Northern Corridor/Moyale highway (Marsabit)
     </div>""", unsafe_allow_html=True)
-
-    # Kenya county cluster map
-    st.markdown('<div class="sec-title">🗺️ Kenya County Cluster Map</div>', unsafe_allow_html=True)
-    # Resolve centroid path relative to this file so app works regardless of CWD
-    base_dir = os.path.dirname(__file__)
-    centroid_path = os.path.join(base_dir, 'data', 'county_centroids.json')
-    if os.path.exists(centroid_path):
-        with open(centroid_path, 'r', encoding='utf-8') as fh:
-            centroids = json.load(fh)
-
-        map_rows = []
-        for county, attrs in COUNTY_DATA.items():
-            centroid = centroids.get(county)
-            if not centroid:
-                continue
-            map_rows.append({
-                'county': county,
-                'cluster': attrs['cluster'],
-                'total_kg': attrs['total_kg'],
-                'trend': attrs['trend'],
-                'lat': centroid['lat'],
-                'lon': centroid['lon'],
-            })
-
-        if map_rows:
-            df_map = pd.DataFrame(map_rows)
-            cluster_color = {
-                'High':'#C00000',
-                'Med-High':'#EF9F27',
-                'Medium':'#2E5FA3',
-                'Low':'#444444',
-            }
-            fig_map = px.scatter_mapbox(
-                df_map,
-                lat='lat', lon='lon',
-                color='cluster',
-                size=[14 if c=='High' else 10 for c in df_map['cluster']],
-                color_discrete_map=cluster_color,
-                hover_name='county',
-                hover_data={'cluster':True, 'total_kg':True, 'trend':True, 'lat':False, 'lon':False},
-                zoom=5,
-                center={'lat':-1.0, 'lon':37.0},
-                mapbox_style='open-street-map',
-            )
-            fig_map.update_layout(margin={'r':0,'t':0,'l':0,'b':0}, height=540,
-                                  legend_title_text='Cluster tier')
-
-            corridors = [
-                {'name':'Tanzania border (Migori)', 'lons':[34.25,34.5,35.0], 'lats':[-1.0,-1.2,-1.4]},
-                {'name':'Uganda border (Busia)', 'lons':[34.0,34.1,34.2], 'lats':[0.45,0.55,0.65]},
-                {'name':'Indian Ocean coast (Kilifi)', 'lons':[39.5,39.7,39.9], 'lats':[-3.0,-3.3,-3.55]},
-                {'name':'Northern Corridor/Moyale (Marsabit)', 'lons':[37.7,38.0,38.5], 'lats':[2.85,2.0,1.0]},
-            ]
-            fig = go.Figure(fig_map)
-            for c in corridors:
-                fig.add_trace(go.Scattermapbox(
-                    lon=c['lons'], lat=c['lats'], mode='lines',
-                    line=dict(color='#8B0000', width=4), name=c['name']))
-            fig.update_layout(mapbox={'style':'open-street-map', 'center':{'lat':-1.0, 'lon':37.0}, 'zoom':5})
-            st.plotly_chart(fig, use_container_width=True)
-        else:
-            st.warning('County centroid file loaded but no valid county coordinates were available.')
-    else:
-        st.warning('County centroid file not found: data/county_centroids.json')
 
     # Full county table
     st.markdown('<div class="sec-title">📋 All 49 Counties — Cluster Assignments</div>',
