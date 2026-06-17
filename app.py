@@ -90,6 +90,13 @@ div.stButton > button {
 }
 div.stButton > button:hover { background:#1A5C2A !important; }
 
+/* Tabs: uppercase labels and black font */
+div[role="tablist"] > button, div[role="tab"] button {
+    text-transform:uppercase !important;
+    color:#000000 !important;
+    font-weight:700 !important;
+}
+
 table.dark-tbl, table.dark-tbl td, table.dark-tbl th {
     background:#2b2b2b !important;
     color:#ffffff !important;
@@ -431,10 +438,6 @@ with st.sidebar:
     st.markdown("<hr style='border-color:rgba(255,255,255,.3);'>", unsafe_allow_html=True)
     st.markdown("""
     <div style='font-size:.8rem;color:#C8F0D0;'>
-    <b>Student:</b> William Maureen Ndinda<br>
-    <b>Reg:</b> SCT213-C002-0048/2022<br>
-    <b>Programme:</b> BSc Data Science<br>
-    <b>JKUAT Karen | 2026</b><br><br>
     <b>Data:</b> NACADA 2021–2025<br>
     <b>Models:</b> XGBoost · LSTM · E2 Ensemble
     </div>
@@ -479,7 +482,6 @@ st.markdown(f"""
     Model: <b>{selected_model}</b> &nbsp;|&nbsp;
     NACADA Data 2021–2025 &nbsp;|&nbsp;
     4-Period Forecast (2025 H2 – 2027 H1) &nbsp;|&nbsp;
-    BSc Data Science, JKUAT Karen
   </p>
 </div>
 """, unsafe_allow_html=True)
