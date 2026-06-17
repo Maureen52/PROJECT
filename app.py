@@ -843,31 +843,54 @@ with tab3:
     st.markdown('<div class="sec-title">🗺️ County Map — Cluster Tiers & Corridors</div>',
                 unsafe_allow_html=True)
 
-    # Try to read FINALIZED.csv to get county list if available
-    try:
-        df_final = pd.read_csv('FINALIZED.csv')
-    except Exception:
-        df_final = None
+    # Try to read FINALIZED.csv or other exports to get county list if available
+    df_final = None
+    for fname in ('FINALIZED.csv', '2026-06-17T11-02_export.csv', 'finalized.csv'):
+        if os.path.exists(fname):
+            try:
+                df_final = pd.read_csv(fname)
+                break
+            except Exception:
+                df_final = None
 
     # Build mapping DataFrame from COUNTY_DATA (fallback) or FINALIZED.csv
     map_rows = []
     if df_final is not None:
-        # FINALIZED.csv may use uppercase county names; attempt to match to COUNTY_DATA
-        counties = [c.strip() for c in df_final.iloc[:,0].astype(str).tolist()]
+        # Determine which column likely contains county names
+        county_col = None
+        common_names = ['county','counties','county_name','county name','name','countyname','county_name','NAME']
+        for col in df_final.columns:
+            if str(col).strip().lower() in common_names:
+                county_col = col
+                break
+        if county_col is None:
+            # heuristic: pick the column whose values best match known counties
+            lowered = df_final.astype(str).apply(lambda s: s.str.lower())
+            scores = {}
+            for col in lowered.columns:
+                vals = lowered[col].dropna().unique()
+                match_count = sum(any(k.lower() in v for k in COUNTY_DATA for v in vals))
+                scores[col] = match_count
+            best = max(scores.items(), key=lambda x: x[1])[0] if scores else None
+            county_col = best
+        if county_col is not None:
+            counties = df_final[county_col].astype(str).fillna('').tolist()
+        else:
+            counties = df_final.iloc[:,0].astype(str).fillna('').tolist()
+
         for c in counties:
-            if c.upper() in ['TOTAL','RAILWAYS','KAPU','']:
+            s = str(c).strip()
+            if s == '' or s.upper() in ['TOTAL','RAILWAYS','KAPU']:
                 continue
-            # try direct match or case-insensitive
             match = None
             for k in COUNTY_DATA:
-                if k.lower() == c.lower() or k.lower() == c.replace("/"," ").lower():
+                if k.lower() == s.lower() or k.lower() == s.replace('/',' ').lower():
                     match = k; break
             if match:
                 d = COUNTY_DATA[match]
                 map_rows.append({'county':match, 'cluster':d['cluster'], 'total_kg':d['total_kg']})
             else:
-                # include as-is (will be matched against GeoJSON names heuristically)
-                map_rows.append({'county':c.title(), 'cluster':'Low', 'total_kg':0})
+                map_rows.append({'county':s.title(), 'cluster':'Low', 'total_kg':0})
     else:
         for k,v in COUNTY_DATA.items():
             map_rows.append({'county':k, 'cluster':v['cluster'], 'total_kg':v['total_kg']})
