@@ -865,32 +865,6 @@ with tab4:
     st.dataframe(df_cmp2.style.apply(hl3, axis=1),
                  use_container_width=True, hide_index=True)
 
-    # MAPE bar chart
-    st.markdown('<div class="sec-title">Test MAPE by Model (lower = better)</div>',
-                unsafe_allow_html=True)
-
-    names  = [r['Model'] for r in cmp]
-    mapes  = [float(r['Test MAPE (%)']) for r in cmp]
-    bcolors= [MODEL_COLORS.get(n, GRN2) for n in names]
-
-    fig2 = go.Figure(go.Bar(
-        x=[n.replace(' (Recommended)','') for n in names],
-        y=mapes,
-        marker_color=bcolors,
-        marker_line_color='white', marker_line_width=1.2,
-        text=[f'{v:.1f}%' for v in mapes],
-        textposition='outside',
-        hovertemplate='%{x}<br>Test MAPE: <b>%{y:.2f}%</b><extra></extra>',
-    ))
-    fig2.update_layout(
-        plot_bgcolor='white', paper_bgcolor='#F0F7F1',
-        yaxis=dict(title='Test MAPE (%)', gridcolor='#E8F5E9', range=[0, max(mapes)*1.22]),
-        xaxis=dict(title='Model', tickangle=-20),
-        height=380, margin=dict(t=30,b=60,l=60,r=20),
-        showlegend=False,
-    )
-    st.plotly_chart(fig2, use_container_width=True)
-
     st.markdown(f"""<div class='result' style='color:#000000;'>
     <b>🌿 Why E2 Ensemble is recommended:</b><br>
     The E2 Ensemble combines XGBoost (weight 79.5%) and LSTM (weight 20.5%) using
