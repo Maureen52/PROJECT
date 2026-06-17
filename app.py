@@ -891,7 +891,7 @@ with tab4:
     )
     st.plotly_chart(fig2, use_container_width=True)
 
-    st.markdown(f"""<div class='result'>
+    st.markdown(f"""<div class='result' style='color:#000000;'>
     <b>🌿 Why E2 Ensemble is recommended:</b><br>
     The E2 Ensemble combines XGBoost (weight 79.5%) and LSTM (weight 20.5%) using
     inverse cross-validation weighting. It achieves the best overall Test MAPE of
