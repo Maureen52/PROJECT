@@ -1,4 +1,6 @@
-What this app does
+This is my final year BSC PROJECT, Where I modeled data to make prections and created am app
+
+What this app does:
 
 An interactive web application that forecasts national cannabis seizure
 quantities in Kenya using three machine learning models:
